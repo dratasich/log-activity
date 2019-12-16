@@ -6,18 +6,18 @@ import os
 import subprocess
 
 
-# start date
-date_from = datetime.date.today().replace(day=1)
-
 # arguments
 desc = "List activities per date."
 parser = argparse.ArgumentParser(description=desc)
 parser.add_argument('-g', '--git', metavar="DIRECTORY", type=str,
                     help="""Directory including git repos to list commits
                     from.""")
-parser.add_argument('-f', '--from', default=date_from,
-                    help=f"""Start date. Defaults to {date_from} (first day of
-                    the current month).""")
+parser.add_argument('-f', '--from', dest='date',
+                    default=datetime.date.today().replace(day=1),
+                    type=lambda d: datetime.datetime.strptime(d, '%Y-%m-%d'),
+                    help=f"""Start date. Defaults to
+                    {datetime.date.today().replace(day=1)}
+                    (first day of the current month).""")
 args = parser.parse_args()
 
 
@@ -38,7 +38,7 @@ if __name__ == '__main__':
             # get author name from git repo
             author = execute(f'cd {d}; git config user.name').strip()
             # print one line commits
-            out += execute(f"""cd {d}; git log --date=iso --since={date_from} --pretty=format:'%ad: %s' --author='{author}'""") + "\n"
+            out += execute(f"""cd {d}; git log --date=iso --since={str_date(args.date)} --pretty=format:'%ad: %s' --author='{author}'""") + "\n"
         lines.extend(out.split('\n'))
 
     # cleanup
