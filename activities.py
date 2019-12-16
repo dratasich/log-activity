@@ -32,6 +32,12 @@ def str_date(date):
     return date.strftime('%Y-%m-%d')
 
 
+def str_time(date):
+    if date is None:
+        return "00:00"
+    return date.strftime('%H:%M')
+
+
 def parse_date(string):
     return datetime.datetime.strptime(string, '%Y-%m-%d')
 
@@ -42,8 +48,39 @@ if __name__ == '__main__':
     day = args.date  # start with first day of the month
     one_day = datetime.timedelta(days=1)
     while day.month == args.date.month:
-        topics[str_date(day)] = {'git': [], 'meetings': []}
+        topics[str_date(day)] = {'git': [], 'meetings': [],
+                                 'from': None, 'to': None}
         day = day + one_day
+
+    # working hours based on 'last' (reboot and shutdown of Linux)
+    # regex for line in 'last' result
+    p = re.compile('reboot\s+system boot\s+[a-z,0-9,.,-]*\s+\w+\s+([A-Z,a-z]+)\s+(\d+)\s+(\d{2}:\d{2})\s+-\s+(\d{2}:\d{2})')
+    # execute last
+    out = execute(f"""last --since={str_date(args.date)}""")
+    lines = out.split('\n')
+    for l in lines:
+        print(l)
+        try:
+            print(p.match(l).groups())
+            month, day, start, end = p.match(l).groups()
+            date = datetime.datetime.strptime(month, '%b')
+            date = date.replace(day=int(day), year=args.date.year)
+            print(date)
+            time = datetime.datetime.strptime(start, '%H:%M')
+            print(time)
+            start = date.replace(hour=time.hour, minute=time.minute)
+            print(start)
+            time = datetime.datetime.strptime(end, '%H:%M')
+            end = date.replace(hour=time.hour, minute=time.minute)
+        except Exception as e:
+            # skip lines where regex fails (e.g., logins, no reboots)
+            continue
+        # skip the logins from other months
+        if date.month != args.date.month:
+            continue
+        # add time
+        topics[str_date(date)]['from'] = start
+        topics[str_date(date)]['to'] = end
 
     # minutes
     # assumption:
@@ -122,5 +159,6 @@ if __name__ == '__main__':
         if weekday == 0:
             print("{:-^80}".format(f" Week {date.isocalendar()[1]} "))
         # formatted output
-        print(f"{k}: Meetings: {', '.join(v['meetings'])}\n"
+        print(f"{k}: {str_time(v['from'])} - {str_time(v['to'])}\n"
+              + f"  meetings: {', '.join(v['meetings'])}\n"
               + textwrap.indent('\n'.join(v['git']), "  "))
