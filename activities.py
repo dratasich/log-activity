@@ -59,17 +59,12 @@ if __name__ == '__main__':
     out = execute(f"""last --since={str_date(args.date)}""")
     lines = out.split('\n')
     for l in lines:
-        print(l)
         try:
-            print(p.match(l).groups())
             month, day, start, end = p.match(l).groups()
             date = datetime.datetime.strptime(month, '%b')
             date = date.replace(day=int(day), year=args.date.year)
-            print(date)
             time = datetime.datetime.strptime(start, '%H:%M')
-            print(time)
             start = date.replace(hour=time.hour, minute=time.minute)
-            print(start)
             time = datetime.datetime.strptime(end, '%H:%M')
             end = date.replace(hour=time.hour, minute=time.minute)
         except Exception as e:
@@ -128,7 +123,7 @@ if __name__ == '__main__':
             d = args.git + '/' + repo
             # get author name from git repo
             author = execute(f'cd {d}; git config user.name').strip()
-            # print one line commits
+            # get one line commits
             out = execute(f"""cd {d}; git log --date=iso --since={str_date(args.date)} --pretty=format:'%aI %s' --author='{author}'""") + "\n"
             commits = out.split('\n')
             for c in commits:
@@ -159,6 +154,8 @@ if __name__ == '__main__':
         if weekday == 0:
             print("{:-^80}".format(f" Week {date.isocalendar()[1]} "))
         # formatted output
+        meetings = f"  meetings: {', '.join(v['meetings'])}\n" \
+                   if len(v['meetings']) > 0 else ""
         print(f"{k}: {str_time(v['from'])} - {str_time(v['to'])}\n"
-              + f"  meetings: {', '.join(v['meetings'])}\n"
+              + meetings
               + textwrap.indent('\n'.join(v['git']), "  "))

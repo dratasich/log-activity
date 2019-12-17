@@ -5,5 +5,5 @@ Usage
 -----
 
 ```bash
-$ activities.py -h
+$ ./activities.py -h
 ```
