@@ -6,9 +6,13 @@ import pandas as pd
 
 
 # %%
-data = pd.read_csv("2020-04-01_finished-stories-per-sprint.csv", sep=';')
+data = pd.read_csv("my-finished-stories.csv", sep=',')
 data.head()
 
+# %%
+# Find column containing story points and rename
+columnStoryPoints = [key for key in data.keys() if "Story Points" in key][0]
+data["Story Points"] = data[columnStoryPoints]
 
 # %%
 # Number of sprints
