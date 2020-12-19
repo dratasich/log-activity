@@ -4,31 +4,30 @@
 # %%
 import pandas as pd
 
+# %% Settings
+filename = "my-finished-stories_NETWORK.csv"
 
-# %%
-data = pd.read_csv("my-finished-stories.csv", sep=',')
+# %% Read csv with jira tasks
+data = pd.read_csv(filename, sep=',')
 data.head()
 
-# %%
-# Find column containing story points and rename
+# %% Find column containing story points and rename
 columnStoryPoints = [key for key in data.keys() if "Story Points" in key][0]
 data["Story Points"] = data[columnStoryPoints]
 
-# %%
-# Number of sprints
+# %% Number of sprints
 data["Sprint"].nunique()
 
 
-# %%
-# Distribution of Story Points
+# %% Distribution of Story Points
 data.hist("Story Points")
 
 
-# %%
+# %% Unique values of story points
 data["Story Points"].value_counts()
 
 
-# %%
+# %% Preprocessing
 # filter columns of interest without NaN values
 points_per_sprint = data[["Story Points", "Sprint"]].dropna()
 # remove "Sprint "
@@ -41,18 +40,15 @@ points_per_sprint["Count"] = 1
 points_per_sprint.head()
 
 
-# %%
-# Sum of points per sprint
+# %% Sum of points per sprint
 points_per_sprint.groupby("Sprint").sum().plot()
 
 
-# %%
-# Number of stories per sprint
+# %% Number of stories per sprint
 points_per_sprint.groupby("Sprint")["Count"].sum().plot()
 
 
-# %%
-# Stories had more points at the beginning
+# %% Stories had more points at the beginning
 col = "Story Points"
 for col in ["Story Points", "Points (linear)"]:
     points_per_sprint.groupby("Sprint").agg(
@@ -60,8 +56,3 @@ for col in ["Story Points", "Points (linear)"]:
         max=(col, max),
         mean=(col, lambda x: x.mean())
     ).plot()
-
-
-# %%
-
-
