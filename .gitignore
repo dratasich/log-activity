@@ -8,3 +8,5 @@
 *.ipynb  # save as python script!
 
 **/.vscode
+
+*.lock
