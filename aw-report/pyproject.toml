@@ -8,6 +8,7 @@ license = "MIT"
 [tool.poetry.dependencies]
 python = "^3.8"
 aw-client = {git = "https://github.com/ActivityWatch/aw-client"}
+pandas = "^1.2.0"
 
 [tool.poetry.dev-dependencies]
 ipykernel = "^5.4.2"
