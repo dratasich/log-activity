@@ -116,7 +116,7 @@ RETURN = sort_by_timestamp(events);
     last_event = Event(**afk[0][-1])
     active = timedelta(seconds=sum([e['duration'] for e in afk[0] if e['data']['status'] == "not-afk"]))
     print(f"{str_date(first_event.timestamp)} {first_event.timestamp.strftime('%a')}"
-          + f" | {str_time(first_event.timestamp)} - {str_time(last_event.timestamp)}"
+          + f" | {str_time(first_event.timestamp)} - {str_time(last_event.timestamp + last_event.duration)}"
           + f" (not-afk {active})"
           )
 
