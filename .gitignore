@@ -6,6 +6,7 @@
 **/__pycache__
 *.pyc
 *.ipynb  # save as python script!
+**/.mypy_cache
 
 **/.vscode
 
