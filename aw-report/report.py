@@ -29,12 +29,12 @@ args = parser.parse_args()
 # %% Helpers
 
 def str_date(date):
-    return date.strftime('%Y-%m-%d')
+    return date.astimezone().strftime('%Y-%m-%d')
 
 def str_time(date):
     if date is None:
         return "00:00"
-    return date.strftime('%H:%M')
+    return date.astimezone().strftime('%H:%M')
 
 @dataclass
 class GitHook:
