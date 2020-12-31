@@ -5,7 +5,7 @@ import argparse
 import os.path
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
 
 import pandas as pd
 from aw_client import ActivityWatchClient
@@ -46,9 +46,9 @@ def str_time(date):
 @dataclass
 class GitHook:
     hook: str
-    origin: str = None
-    branch: str = None
-    summary: str = None
+    origin: Optional[str] = None
+    branch: Optional[str] = None
+    summary: Optional[str] = None
     issues: List[str] = field(default_factory=list)
 
     def __str__(self):
@@ -59,10 +59,10 @@ class GitHook:
 @dataclass
 class GitHookDto:
     hook: str
-    origin: str = None
-    branch: str = None
-    summary: str = None
-    issue: str = None
+    origin: Optional[str] = None
+    branch: Optional[str] = None
+    summary: Optional[str] = None
+    issue: Optional[str] = None
 
 
 def to_dataframe(hooks: List[GitHook]):
