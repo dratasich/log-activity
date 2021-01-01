@@ -27,6 +27,14 @@ parser.add_argument(
     default="timestamp",
     help=f"""Print commits either per issue or print all commits ordered by time.""",
 )
+parser.add_argument(
+    "-f",
+    "--from",
+    dest="date",
+    default=DATE_FROM,
+    type=lambda d: datetime.strptime(d, "%Y-%m-%d").replace(hour=4, minute=0, second=0, microsecond=0),
+    help=f"""Start date. Defaults to {DATE_FROM} (first day of the current month).""",
+)
 args = parser.parse_args()
 
 
@@ -102,7 +110,7 @@ def issue_to_string(i: pd.DataFrame):
 # %% Get events
 client = ActivityWatchClient("report-client")
 
-date = DATE_FROM
+date = args.date
 while date < DATE_TO:
     query = f"""
     events = query_bucket('{BUCKET_AFK}');
