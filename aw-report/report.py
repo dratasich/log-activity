@@ -3,6 +3,7 @@
 # %% Imports
 import argparse
 import os.path
+import socket
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -12,8 +13,8 @@ from aw_client import ActivityWatchClient
 from aw_core.models import Event
 
 # %% Settings
-BUCKET_AFK = "aw-watcher-afk_nils"
-BUCKET_GIT = "aw-git-hooks_nils"
+BUCKET_AFK = f"aw-watcher-afk_{socket.gethostname()}"
+BUCKET_GIT = f"aw-git-hooks_{socket.gethostname()}"
 DATE_FROM = datetime.today().replace(day=1, hour=4, minute=0, second=0, microsecond=0)
 DATE_TO = datetime.now()
 
