@@ -156,7 +156,7 @@ while date < DATE_TO:
             commits = (
                 df[df.hook == "post-commit"]
                 .astype(str)
-                .drop_duplicates()
+                .drop_duplicates(["origin", "summary", "issue"])
                 .groupby("issue")
                 .apply(lambda g: print(f"  {issue_to_string(g)}"))
             )
