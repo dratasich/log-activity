@@ -149,10 +149,35 @@ while date < DATE_TO:
     active = timedelta(
         seconds=sum([e["duration"] for e in afk[0] if e["data"]["status"] == "not-afk"])
     )
+    short_pause = timedelta(minutes=5)
+    active_incl_short_pauses = active + timedelta(
+        seconds=sum(
+            [
+                e["duration"]
+                for e in afk[0]
+                if e["data"]["status"] == "afk" and e["duration"] < short_pause.seconds
+            ]
+        )
+    )
+    logging.debug(
+        f"not-afk: {active}, with pauses < {short_pause.seconds}s: {active_incl_short_pauses}"
+    )
+    working_hours = active_incl_short_pauses
+    if active_incl_short_pauses >= timedelta(hours=6):
+        logging.debug(f"add 30min break")
+        working_hours += timedelta(minutes=30)
+    round_s = timedelta(minutes=15).total_seconds()
+    working_hours_rounded = timedelta(
+        seconds=int((working_hours.total_seconds() + round_s / 2) / (round_s))
+        * (round_s)
+    )
+    logging.debug(
+        f"working hours: {working_hours}, {round_s}s-rounded to {working_hours_rounded}"
+    )
     print(
         f"{str_date(first_event.timestamp)} {first_event.timestamp.strftime('%a')}"
         + f" | {str_time(first_event.timestamp)} - {str_time(last_event.timestamp + last_event.duration)}"
-        + f" (not-afk {active})"
+        + f" ({working_hours_rounded})"
     )
 
     # git commits
