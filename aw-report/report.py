@@ -2,6 +2,7 @@
 
 # %% Imports
 import argparse
+import logging
 import os.path
 import socket
 from dataclasses import dataclass, field
@@ -33,10 +34,18 @@ parser.add_argument(
     "--from",
     dest="date",
     default=DATE_FROM,
-    type=lambda d: datetime.strptime(d, "%Y-%m-%d").replace(hour=4, minute=0, second=0, microsecond=0),
+    type=lambda d: datetime.strptime(d, "%Y-%m-%d").replace(
+        hour=4, minute=0, second=0, microsecond=0
+    ),
     help=f"""Start date. Defaults to {DATE_FROM} (first day of the current month).""",
 )
+parser.add_argument(
+    "-v", "--verbose", action="store_true", help="Verbose logging (debug)."
+)
 args = parser.parse_args()
+
+if args.verbose:
+    logging.basicConfig(level=logging.DEBUG)
 
 
 # %% Helpers
