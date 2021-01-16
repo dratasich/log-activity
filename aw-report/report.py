@@ -45,7 +45,9 @@ parser.add_argument(
 args = parser.parse_args()
 
 if args.verbose:
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(
+        level=logging.DEBUG, format="[%(asctime)-15s] [%(levelname)-5s] %(message)s"
+    )
 
 
 # %% Helpers
@@ -207,7 +209,7 @@ while date < DATE_TO:
             commits = (
                 df[df.hook == "post-commit"]
                 .astype(str)
-                .drop_duplicates(["origin", "summary", "issue"])
+                .drop_duplicates(["origin", "summary"])
                 .groupby("issue")
                 .apply(lambda g: print(f"  {issue_to_string(g)}"))
             )

@@ -5,12 +5,12 @@ Reads events from buckets per day and prints:
 
 - [x] start and end of first and last afk-event (login and shutdown)
 - [x] active time (sum of not-afk durations)
-  - [ ] add afk < 5min (e.g., 5-10min per hour is ok)
-  - [ ] add 30min for lunch
-  - [ ] round to 0:15
+  - [x] add afk < 5min (e.g., 5-10min per hour is ok)
+  - [x] add 30min for lunch
+  - [x] round to 0:15
         (add an option to distinguish between report and aw summary)
 - [x] git issues and commits (aw-git-hooks events)
-  - [ ] duplicates of (issue, git-repo, summary) are removed
+  - [x] duplicates of (git-repo, summary) are removed
     (may happen on `git commit ammend or reword`)
 - [ ] time spent in meetings
   - [ ] window events containing "MS Teams"
