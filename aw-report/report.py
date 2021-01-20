@@ -167,7 +167,7 @@ while date < DATE_TO:
         if args.commits_sort_by == "timestamp":
             [print(h) for h in hooks if h.hook == "post-commit"]
         elif args.commits_sort_by == "issue":
-            df = to_dataframe(hooks)
+            df = hooks_to_dataframe(hooks)
             commits = (
                 df[df.hook == "post-commit"]
                 .astype(str)

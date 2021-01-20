@@ -26,7 +26,7 @@ class GitHookDto:
     issue: Optional[str] = None
 
 
-def to_dataframe(hooks: List[GitHook]):
+def hooks_to_dataframe(hooks: List[GitHook]):
     # flatten issue list
     hooksDto = []
     for h in hooks:
@@ -41,3 +41,16 @@ def to_dataframe(hooks: List[GitHook]):
             new_dict["issue"] = i
             hooksDto.append(GitHookDto(**new_dict))
     return pd.DataFrame([h.__dict__ for h in hooksDto])
+
+
+@dataclass
+class WebVisit:
+    title: str
+    url: str
+    audible: bool
+    incognito: bool
+    tabCount: int
+
+
+def visits_to_dataframe(visits: List[WebVisit]):
+    return pd.DataFrame([v.__dict__ for v in visits])
