@@ -9,6 +9,7 @@ from typing import List, Optional
 import pandas as pd
 from aw_client import ActivityWatchClient
 from aw_core.models import Event
+from sklearn.model_selection import train_test_split
 
 from models import *
 
@@ -50,3 +51,19 @@ visits["words"] = visits["title"].str.split(r"[ ,/]")
 
 
 # select x random samples for user to train
+X_train, X_test = train_test_split(visits, train_size=2, random_state=1)
+
+
+# ask user about a fitting category
+def train(x):
+    print(f"---\nCategories from your git issues: {projects.to_list()}")
+    print(x[["title", "url"]])
+    return input("Category: ")
+
+
+# train
+y_train = X_train.apply(lambda r: train(r), axis=1)
+
+X = X_train.copy()
+X["label"] = y_train
+print(X)
