@@ -129,6 +129,8 @@ while date < DATE_TO:
         Afk(**flatten_json(e))
         for e in aw_events(BUCKET_AFK, date, date + timedelta(days=1))[0]
     ]
+    # duration of web events cannot be used to calculate project time
+    # on window change, the events do not end :(
     web = [
         WebVisit(**flatten_json(e))
         for e in aw_events(BUCKET_WEB, date, date + timedelta(days=1))[0]
@@ -189,12 +191,20 @@ while date < DATE_TO:
         category: re.compile(regex, re.IGNORECASE)
         for category, regex in config["categories"].items()
     }
+    regexes_proj = {
+        p: re.compile(r, re.IGNORECASE) for p, r in config["projects"].items()
+    }
     logging.debug("Categorize website visits")
     for visit in web:
         for c, r in regexes.items():
             match = r.findall(visit.title + visit.url)
             if len(match) > 0:
                 visit.categories.append(c)
+        for p, r in regexes_proj.items():
+            match = r.findall(visit.title + visit.url)
+            if len(match) > 0:
+                visit.project_excl = p
+                break
     logging.debug(f"total: {len(web)}")
     logging.debug(f"categorized: {len([v for v in web if len(v.categories) > 0])}")
     logging.debug(
@@ -206,13 +216,33 @@ while date < DATE_TO:
             match = r.findall(edit.project + edit.file + edit.language)
             if len(match) > 0:
                 edit.categories.append(c)
+        for p, r in regexes_proj.items():
+            match = r.findall(edit.project + edit.file + edit.language)
+            if len(match) > 0:
+                edit.project_excl = p
+                break
     logging.debug(f"total: {len(edits)}")
     logging.debug(f"categorized: {len([e for e in edits if len(e.categories) > 0])}")
     logging.debug(
         f"examples for missing categorization: {[e for e in edits if len(e.categories) == 0][0:10]}"
     )
+    logging.debug(
+        f"assigned to a project: {len([e for e in edits if e.project_excl is not None])}"
+    )
 
-    # project distribution based on windows (web and editors)
+    # windows distribution (surfing more than programming? ;))
+
+    # categories surfed
+    for c in config["categories"]:
+        logging.debug(
+            f"{c}: {timedelta(seconds=sum([e.duration for e in web if c in e.categories]))}"
+        )
+
+    # project percentage to active time based on editor events
+    for p in config["projects"]:
+        logging.debug(
+            f"{p}: {timedelta(seconds=sum([e.duration for e in edits if e.project_excl == p]))}"
+        )
 
     # git commits
     if len(git) > 0:
