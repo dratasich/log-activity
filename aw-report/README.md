@@ -9,6 +9,7 @@ Reads events from buckets per day and prints:
   - [x] add 30min for lunch
   - [x] round to 0:15
         (add an option to distinguish between report and aw summary)
+- [ ] distribute active time to aw projects
 - [x] git issues and commits (aw-git-hooks events)
   - [x] duplicates of (git-repo, summary) are removed
     (may happen on `git commit ammend or reword`)

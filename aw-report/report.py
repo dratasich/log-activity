@@ -2,6 +2,8 @@
 
 # %% Imports
 import argparse
+import ast
+import configparser
 import logging
 import os.path
 import socket
@@ -16,6 +18,8 @@ from models import *
 
 # %% Settings
 BUCKET_AFK = f"aw-watcher-afk_{socket.gethostname()}"
+BUCKET_WEB = f"aw-watcher-web-firefox"
+BUCKET_EDITOR = f"aw-watcher-editor_{socket.gethostname()}"
 BUCKET_GIT = f"aw-git-hooks_{socket.gethostname()}"
 DATE_FROM = datetime.today().replace(day=1, hour=4, minute=0, second=0, microsecond=0)
 DATE_TO = datetime.now()
@@ -49,6 +53,12 @@ if args.verbose:
     logging.basicConfig(
         level=logging.DEBUG, format="[%(asctime)-15s] [%(levelname)-5s] %(message)s"
     )
+
+# Advanced configuration
+config = configparser.ConfigParser()
+config.read("config.ini")
+if not config.has_section("projects"):
+    logging.warning("No configuration for project mapping (fill `config.ini`)!")
 
 
 # %% Helpers
@@ -103,18 +113,24 @@ def issue_to_string(i: pd.DataFrame):
 # %% Get events
 client = ActivityWatchClient("report-client")
 
+
+def aw_events(bucket: str, date_from: datetime, date_to: datetime):
+    query = f"""
+    events = query_bucket('{bucket}');
+    RETURN = sort_by_timestamp(events);
+    """
+    return client.query(query, [(date_from, date_to)])
+
+
 date = args.date
 while date < DATE_TO:
-    query = f"""
-    events = query_bucket('{BUCKET_AFK}');
-    RETURN = sort_by_timestamp(events);
-    """
-    afk = client.query(query, [(date, date + timedelta(days=1))])
-    query = f"""
-    events = query_bucket('{BUCKET_GIT}');
-    RETURN = sort_by_timestamp(events);
-    """
-    git = client.query(query, [(date, date + timedelta(days=1))])
+    afk = aw_events(BUCKET_AFK, date, date + timedelta(days=1))[0]
+    web = aw_events(BUCKET_WEB, date, date + timedelta(days=1))[0]
+    edits: List = []
+    for editor in ast.literal_eval(config["DEFAULT"]["editors"]):
+        edits.extend(aw_events(BUCKET_EDITOR.replace("editor", editor), date,
+                               date + timedelta(days=1))[0])
+    git = aw_events(BUCKET_GIT, date, date + timedelta(days=1))[0]
     date = date + timedelta(days=1)
 
     # new week formatting
@@ -122,20 +138,20 @@ while date < DATE_TO:
     if weekday == 1:
         print("{:-^80}".format(f" Week {date.isocalendar()[1]} "))
 
-    if len(afk[0]) == 0:
+    if len(afk) == 0:
         # no events at all on this day
         continue
 
     # active time
     active = timedelta(
-        seconds=sum([e["duration"] for e in afk[0] if e["data"]["status"] == "not-afk"])
+        seconds=sum([e["duration"] for e in afk if e["data"]["status"] == "not-afk"])
     )
     short_pause = timedelta(minutes=5)
     active_incl_short_pauses = active + timedelta(
         seconds=sum(
             [
                 e["duration"]
-                for e in afk[0]
+                for e in afk
                 if e["data"]["status"] == "afk" and e["duration"] < short_pause.seconds
             ]
         )
@@ -150,8 +166,8 @@ while date < DATE_TO:
     working_hours_rounded = round_timedelta(working_hours)
 
     # start and end of day
-    first_event = Event(**afk[0][0])
-    last_event = Event(**afk[0][-1])
+    first_event = Event(**afk[0])
+    last_event = Event(**afk[-1])
     start = round_datetime(first_event.timestamp)
     end = round_datetime(last_event.timestamp + last_event.duration)
 
@@ -161,9 +177,11 @@ while date < DATE_TO:
         + f" ({working_hours_rounded})"
     )
 
+    # project distribution based on windows (web and editors)
+
     # git commits
-    if len(git[0]) > 0:
-        hooks = [GitHook(**e["data"]) for e in git[0]]
+    if len(git) > 0:
+        hooks = [GitHook(**e["data"]) for e in git]
         if args.commits_sort_by == "timestamp":
             [print(h) for h in hooks if h.hook == "post-commit"]
         elif args.commits_sort_by == "issue":
