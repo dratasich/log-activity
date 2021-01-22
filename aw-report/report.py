@@ -12,7 +12,6 @@ from typing import List, Optional
 
 import pandas as pd
 from aw_client import ActivityWatchClient
-from aw_core.models import Event
 
 from models import *
 
@@ -124,12 +123,26 @@ def aw_events(bucket: str, date_from: datetime, date_to: datetime):
 
 date = args.date
 while date < DATE_TO:
-    afk = aw_events(BUCKET_AFK, date, date + timedelta(days=1))[0]
-    web = aw_events(BUCKET_WEB, date, date + timedelta(days=1))[0]
-    edits: List = []
+    afk = [
+        Afk(**flatten_json(e))
+        for e in aw_events(BUCKET_AFK, date, date + timedelta(days=1))[0]
+    ]
+    web = [
+        WebVisit(**flatten_json(e))
+        for e in aw_events(BUCKET_WEB, date, date + timedelta(days=1))[0]
+    ]
+    edits: List[Edit] = []
     for editor in ast.literal_eval(config["DEFAULT"]["editors"]):
-        edits.extend(aw_events(BUCKET_EDITOR.replace("editor", editor), date,
-                               date + timedelta(days=1))[0])
+        edits.extend(
+            [
+                Edit(**flatten_json(e))
+                for e in aw_events(
+                    BUCKET_EDITOR.replace("editor", editor),
+                    date,
+                    date + timedelta(days=1),
+                )[0]
+            ]
+        )
     git = aw_events(BUCKET_GIT, date, date + timedelta(days=1))[0]
     date = date + timedelta(days=1)
 
@@ -143,17 +156,11 @@ while date < DATE_TO:
         continue
 
     # active time
-    active = timedelta(
-        seconds=sum([e["duration"] for e in afk if e["data"]["status"] == "not-afk"])
-    )
+    active = timedelta(seconds=sum([e.duration for e in afk if not e.afk]))
     short_pause = timedelta(minutes=5)
     active_incl_short_pauses = active + timedelta(
         seconds=sum(
-            [
-                e["duration"]
-                for e in afk
-                if e["data"]["status"] == "afk" and e["duration"] < short_pause.seconds
-            ]
+            [e.duration for e in afk if e.afk and e.duration < short_pause.seconds]
         )
     )
     logging.debug(
@@ -166,10 +173,8 @@ while date < DATE_TO:
     working_hours_rounded = round_timedelta(working_hours)
 
     # start and end of day
-    first_event = Event(**afk[0])
-    last_event = Event(**afk[-1])
-    start = round_datetime(first_event.timestamp)
-    end = round_datetime(last_event.timestamp + last_event.duration)
+    start = round_datetime(afk[0].timestamp)
+    end = round_datetime(afk[-1].timestamp + timedelta(seconds=afk[-1].duration))
 
     print(
         f"{str_date(start)} {start.strftime('%a')}"

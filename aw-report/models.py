@@ -1,7 +1,47 @@
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 import pandas as pd
+
+
+# flatten json, e.g., `data` in aw events
+def flatten_json(y):
+    out = {}
+
+    def flatten(x, name=""):
+        if type(x) is dict:
+            for a in x:
+                flatten(x[a], a)
+        else:
+            out[name] = x
+
+    flatten(y)
+    return out
+
+
+@dataclass
+class Event:
+    id: int
+    duration: float
+    timestamp: datetime
+
+    def __post_init__(self):
+        self.timestamp = datetime.fromisoformat(str(self.timestamp))
+
+    @property
+    def timedelta(self):
+        return timedelta(seconds=duration)
+
+
+@dataclass
+class Afk(Event):
+    status: str
+    afk: bool = field(init=False)
+
+    def __post_init__(self):
+        self.timestamp = datetime.fromisoformat(str(self.timestamp))
+        self.afk = self.status == "afk"
 
 
 @dataclass
@@ -44,13 +84,26 @@ def hooks_to_dataframe(hooks: List[GitHook]):
 
 
 @dataclass
-class WebVisit:
+class WebVisit(Event):
     title: str
     url: str
     audible: bool
     incognito: bool
     tabCount: int
 
+    def __post_init__(self):
+        self.timestamp = datetime.fromisoformat(str(self.timestamp))
+
 
 def visits_to_dataframe(visits: List[WebVisit]):
     return pd.DataFrame([v.__dict__ for v in visits])
+
+
+@dataclass
+class Edit(Event):
+    language: str
+    project: str
+    file: str
+
+    def __post_init__(self):
+        self.timestamp = datetime.fromisoformat(str(self.timestamp))
