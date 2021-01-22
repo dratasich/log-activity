@@ -6,6 +6,7 @@ import ast
 import configparser
 import logging
 import os.path
+import re
 import socket
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -123,6 +124,7 @@ def aw_events(bucket: str, date_from: datetime, date_to: datetime):
 
 date = args.date
 while date < DATE_TO:
+    logging.debug(f">>> {date}")
     afk = [
         Afk(**flatten_json(e))
         for e in aw_events(BUCKET_AFK, date, date + timedelta(days=1))[0]
@@ -132,7 +134,7 @@ while date < DATE_TO:
         for e in aw_events(BUCKET_WEB, date, date + timedelta(days=1))[0]
     ]
     edits: List[Edit] = []
-    for editor in ast.literal_eval(config["DEFAULT"]["editors"]):
+    for editor in ast.literal_eval(config["buckets"]["editors"]):
         edits.extend(
             [
                 Edit(**flatten_json(e))
@@ -180,6 +182,34 @@ while date < DATE_TO:
         f"{str_date(start)} {start.strftime('%a')}"
         + f" | {str_time(start)} - {str_time(end)}"
         + f" ({working_hours_rounded})"
+    )
+
+    # categorize web and edits based on regex
+    regexes = {
+        category: re.compile(regex, re.IGNORECASE)
+        for category, regex in config["categories"].items()
+    }
+    logging.debug("Categorize website visits")
+    for visit in web:
+        for c, r in regexes.items():
+            match = r.findall(visit.title + visit.url)
+            if len(match) > 0:
+                visit.categories.append(c)
+    logging.debug(f"total: {len(web)}")
+    logging.debug(f"categorized: {len([v for v in web if len(v.categories) > 0])}")
+    logging.debug(
+        f"examples for missing categorization: {[v for v in web if len(v.categories) == 0][0:10]}"
+    )
+    logging.debug("Categorize editor events")
+    for edit in edits:
+        for c, r in regexes.items():
+            match = r.findall(edit.project + edit.file + edit.language)
+            if len(match) > 0:
+                edit.categories.append(c)
+    logging.debug(f"total: {len(edits)}")
+    logging.debug(f"categorized: {len([e for e in edits if len(e.categories) > 0])}")
+    logging.debug(
+        f"examples for missing categorization: {[e for e in edits if len(e.categories) == 0][0:10]}"
     )
 
     # project distribution based on windows (web and editors)

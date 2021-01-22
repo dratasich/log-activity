@@ -90,6 +90,7 @@ class WebVisit(Event):
     audible: bool
     incognito: bool
     tabCount: int
+    categories: List[str] = field(default_factory=list)
 
     def __post_init__(self):
         self.timestamp = datetime.fromisoformat(str(self.timestamp))
@@ -104,6 +105,7 @@ class Edit(Event):
     language: str
     project: str
     file: str
+    categories: List[str] = field(default_factory=list)
 
     def __post_init__(self):
         self.timestamp = datetime.fromisoformat(str(self.timestamp))
