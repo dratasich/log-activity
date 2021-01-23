@@ -9,15 +9,17 @@ import os.path
 import re
 import socket
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 from aw_client import ActivityWatchClient
+from dateutil.tz import tzlocal
 
-from models import *
+from utils import *
 
 # %% Settings
 BUCKET_AFK = f"aw-watcher-afk_{socket.gethostname()}"
+BUCKET_WINDOW = f"aw-watcher-window_{socket.gethostname()}"
 BUCKET_WEB = f"aw-watcher-web-firefox"
 BUCKET_EDITOR = f"aw-watcher-editor_{socket.gethostname()}"
 BUCKET_GIT = f"aw-git-hooks_{socket.gethostname()}"
@@ -64,14 +66,14 @@ if not config.has_section("projects"):
 # %% Helpers
 
 
-def str_date(date):
-    return date.astimezone().strftime("%Y-%m-%d")
+def str_date(date: datetime):
+    return date.astimezone(tz=tzlocal()).strftime("%Y-%m-%d")
 
 
-def str_time(date):
+def str_time(date: datetime):
     if date is None:
         return "00:00"
-    return date.astimezone().strftime("%H:%M")
+    return date.astimezone(tz=tzlocal()).strftime("%H:%M")
 
 
 def round_timedelta(tm: timedelta, round_to_s=timedelta(minutes=15).total_seconds()):
@@ -94,60 +96,69 @@ def round_datetime(tm: datetime, round_to_min=15):
 
 
 def issue_to_string(i: pd.DataFrame):
-    issue = i.iloc[0].issue
+    issue = i.iloc[0].git_issues
     summary = ""
-    titles = i[["origin", "summary"]].mask(i.summary.eq("None")).dropna()
+    titles = i[["git_origin", "git_summary"]].mask(i.git_summary.eq("None")).dropna()
     if len(titles) > 0:
         repos = []
-        titles.groupby("origin").apply(
+        titles.groupby("git_origin").apply(
             lambda o: repos.append(
-                os.path.basename(o.iloc[0].origin).split(".")[0]
+                os.path.basename(o.iloc[0].git_origin).split(".")[0]
                 + ": "
-                + ", ".join(o.summary)
+                + ", ".join(o.git_summary)
             )
         )
         summary = f" ({'; '.join(repos)})"
-    return f"{issue if issue != 'None' else 'other'}{summary}"
+    return f"{issue if issue != 'None' and issue != 'nan' else 'other'}{summary}"
 
 
 # %% Get events
 client = ActivityWatchClient("report-client")
 
 
-def aw_events(bucket: str, date_from: datetime, date_to: datetime):
+def aw_events(bucket: str, time_ranges: [(datetime, datetime)], rename={}):
     query = f"""
     events = query_bucket('{bucket}');
     RETURN = sort_by_timestamp(events);
     """
-    return client.query(query, [(date_from, date_to)])
+    events = client.query(query, time_ranges)[0]
+    df = pd.DataFrame([flatten_json(e, rename) for e in events])
+    if not df.empty:
+        df.timestamp = pd.to_datetime(df.timestamp)
+    return df
 
 
 date = args.date
 while date < DATE_TO:
     logging.debug(f">>> {date}")
-    afk = [
-        Afk(**flatten_json(e))
-        for e in aw_events(BUCKET_AFK, date, date + timedelta(days=1))[0]
-    ]
+    current_day = (date, date + timedelta(days=1))
+
+    logging.debug(f"get aw events of {current_day}")
+    # window bucket shows the current/active application
+    window = aw_events(BUCKET_WINDOW, [current_day], rename={"data": "window"})
+    # active time in front of the PC (afk..away-from-keyboard)
+    afk = aw_events(BUCKET_AFK, [current_day], rename={"data": "afk"})
+    afk["afk"] = afk["afk_status"].apply(lambda s: s == "afk")
     # duration of web events cannot be used to calculate project time
     # on window change, the events do not end :(
-    web = [
-        WebVisit(**flatten_json(e))
-        for e in aw_events(BUCKET_WEB, date, date + timedelta(days=1))[0]
-    ]
-    edits: List[Edit] = []
-    for editor in ast.literal_eval(config["buckets"]["editors"]):
-        edits.extend(
-            [
-                Edit(**flatten_json(e))
-                for e in aw_events(
-                    BUCKET_EDITOR.replace("editor", editor),
-                    date,
-                    date + timedelta(days=1),
-                )[0]
-            ]
-        )
-    git = aw_events(BUCKET_GIT, date, date + timedelta(days=1))[0]
+    web = aw_events(BUCKET_WEB, [current_day], rename={"data": "web"})
+    # events from editors
+    # on window change the event ends, as expected, i.e. events show active time (per file)
+    # https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.append.html
+    edits = pd.concat(
+        [
+            aw_events(
+                BUCKET_EDITOR.replace("editor", editor),
+                [current_day],
+                rename={"data": "editor"},
+            )
+            for editor in ast.literal_eval(config["buckets"]["editors"])
+        ],
+        ignore_index=True,
+    )
+    git = aw_events(BUCKET_GIT, [current_day], rename={"data": "git"})
+
+    # step for next day
     date = date + timedelta(days=1)
 
     # new week formatting
@@ -160,12 +171,10 @@ while date < DATE_TO:
         continue
 
     # active time
-    active = timedelta(seconds=sum([e.duration for e in afk if not e.afk]))
+    active = timedelta(seconds=afk[~afk.afk].duration.sum())
     short_pause = timedelta(minutes=5)
-    active_incl_short_pauses = active + timedelta(
-        seconds=sum(
-            [e.duration for e in afk if e.afk and e.duration < short_pause.seconds]
-        )
+    active_incl_short_pauses = timedelta(
+        seconds=afk[~afk.afk | (afk.duration < short_pause.seconds)].duration.sum()
     )
     logging.debug(
         f"not-afk: {active}, with pauses < {short_pause.seconds}s: {active_incl_short_pauses}"
@@ -177,8 +186,10 @@ while date < DATE_TO:
     working_hours_rounded = round_timedelta(working_hours)
 
     # start and end of day
-    start = round_datetime(afk[0].timestamp)
-    end = round_datetime(afk[-1].timestamp + timedelta(seconds=afk[-1].duration))
+    start = round_datetime(afk.iloc[0].timestamp)
+    end = round_datetime(
+        afk.iloc[-1].timestamp + timedelta(seconds=afk.iloc[-1].duration)
+    )
 
     print(
         f"{str_date(start)} {start.strftime('%a')}"
@@ -191,70 +202,66 @@ while date < DATE_TO:
         category: re.compile(regex, re.IGNORECASE)
         for category, regex in config["categories"].items()
     }
+
+    def categories(s: str, regexPerCategory: Dict[str, re.Pattern]):
+        return [c for c, r in regexPerCategory.items() if len(r.findall(s)) > 0]
+
     regexes_proj = {
         p: re.compile(r, re.IGNORECASE) for p, r in config["projects"].items()
     }
+
+    def project(s: str, regexPerProject: Dict[str, re.Pattern]):
+        for p, r in regexes_proj.items():
+            if len(r.findall(s)) > 0:
+                return p
+        return None
+
     logging.debug("Categorize website visits")
-    for visit in web:
-        for c, r in regexes.items():
-            match = r.findall(visit.title + visit.url)
-            if len(match) > 0:
-                visit.categories.append(c)
-        for p, r in regexes_proj.items():
-            match = r.findall(visit.title + visit.url)
-            if len(match) > 0:
-                visit.project_excl = p
-                break
+    web["categories"] = web.apply(
+        lambda row: categories(row.web_url + row.web_title, regexes), axis=1
+    )
+    web["is_categorized"] = web.apply(lambda row: len(row.categories) > 0, axis=1)
     logging.debug(f"total: {len(web)}")
-    logging.debug(f"categorized: {len([v for v in web if len(v.categories) > 0])}")
-    logging.debug(
-        f"examples for missing categorization: {[v for v in web if len(v.categories) == 0][0:10]}"
-    )
+    logging.debug(f"categorized: {len(web[web.is_categorized])}")
+    logging.debug(f"missing categorization, e.g.: {web[~web.is_categorized][0:10]}")
+
     logging.debug("Categorize editor events")
-    for edit in edits:
-        for c, r in regexes.items():
-            match = r.findall(edit.project + edit.file + edit.language)
-            if len(match) > 0:
-                edit.categories.append(c)
-        for p, r in regexes_proj.items():
-            match = r.findall(edit.project + edit.file + edit.language)
-            if len(match) > 0:
-                edit.project_excl = p
-                break
+    edits["categories"] = edits.apply(
+        lambda row: categories(
+            row.editor_project + row.editor_file + row.editor_language, regexes
+        ),
+        axis=1,
+    )
+    edits["is_categorized"] = edits.apply(lambda row: len(row.categories) > 0, axis=1)
     logging.debug(f"total: {len(edits)}")
-    logging.debug(f"categorized: {len([e for e in edits if len(e.categories) > 0])}")
-    logging.debug(
-        f"examples for missing categorization: {[e for e in edits if len(e.categories) == 0][0:10]}"
+    logging.debug(f"categorized: {len(edits[edits.is_categorized])}")
+    logging.debug(f"missing categorization, e.g.: {edits[~edits.is_categorized][0:10]}")
+    edits["project"] = edits.apply(
+        lambda row: project(
+            row.editor_project + row.editor_file + row.editor_language, regexes_proj
+        ),
+        axis=1,
     )
-    logging.debug(
-        f"assigned to a project: {len([e for e in edits if e.project_excl is not None])}"
-    )
+    edits["has_project"] = edits.apply(lambda row: row.project is not None, axis=1)
+    logging.debug(f"assigned to a project: {len(edits[edits.has_project])}")
+    logging.debug(f"missing a project, e.g.: {edits[~edits.has_project][0:10]}")
 
     # windows distribution (surfing more than programming? ;))
 
-    # categories surfed
-    for c in config["categories"]:
-        logging.debug(
-            f"{c}: {timedelta(seconds=sum([e.duration for e in web if c in e.categories]))}"
-        )
+    # categories surfed (time spent in category is not mutually exclusive!)
+    logging.debug(web.explode("categories").groupby("categories").duration.sum())
 
     # project percentage to active time based on editor events
-    for p in config["projects"]:
-        logging.debug(
-            f"{p}: {timedelta(seconds=sum([e.duration for e in edits if e.project_excl == p]))}"
-        )
+    logging.debug(edits.groupby("project").duration.sum())
 
     # git commits
     if len(git) > 0:
-        hooks = [GitHook(**e["data"]) for e in git]
         if args.commits_sort_by == "timestamp":
-            [print(h) for h in hooks if h.hook == "post-commit"]
+            print(git[git.git_hook == "post-commit"])
         elif args.commits_sort_by == "issue":
-            df = hooks_to_dataframe(hooks)
-            commits = (
-                df[df.hook == "post-commit"]
-                .astype(str)
-                .drop_duplicates(["origin", "summary"])
-                .groupby("issue")
+            # list of issues to rows (explode, ok, because we don't sum up duration)
+            git[git.git_hook == "post-commit"].explode("git_issues") \
+                .astype(str) \
+                .drop_duplicates(["git_origin", "git_summary"]) \
+                .groupby("git_issues") \
                 .apply(lambda g: print(f"  {issue_to_string(g)}"))
-            )
