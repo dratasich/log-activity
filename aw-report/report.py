@@ -257,9 +257,11 @@ while date < DATE_TO:
             print(git[git.git_hook == "post-commit"])
         elif args.commits_sort_by == "issue":
             # list of issues to rows (explode, ok, because we don't sum up duration)
-            git[git.git_hook == "post-commit"] \
-                .explode("git_issues") \
-                .astype(str) \
-                .drop_duplicates(["git_origin", "git_summary"]) \
-                .groupby("git_issues") \
-                .apply(lambda g: print(f"  {issue_to_string(g)}"))
+            (
+                git[git.git_hook == "post-commit"]
+                .explode("git_issues")
+                .astype(str)
+                .drop_duplicates(["git_origin", "git_summary"])
+                .groupby("git_issues")
+                .apply(lambda g: print(f"    {issue_to_string(g)}"))
+            )
