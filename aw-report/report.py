@@ -115,6 +115,19 @@ def issue_to_string(i: pd.DataFrame):
     return f"{issue if issue != 'None' and issue != 'nan' else 'other'}{summary}"
 
 
+def regexes(config_section: Dict[str, str]):
+    return {
+        category: re.compile(regex, re.IGNORECASE)
+        for category, regex in config_section.items()
+    }
+
+
+# read and compile regexes from config
+r_editor = regexes(config["projects"])
+r_web = regexes(config["categories"])
+r_window = regexes(config["apps"])
+
+
 # %% Get events
 client = ActivityWatchClient("report-client")
 
@@ -128,6 +141,39 @@ def aw_events(bucket: str, time_ranges: [(datetime, datetime)], rename={}):
     df = pd.DataFrame([flatten_json(e, rename) for e in events])
     if not df.empty:
         df.timestamp = pd.to_datetime(df.timestamp)
+    return df
+
+
+def aw_categorize(
+    df: pd.DataFrame, regexes: Dict[str, re.Pattern], columns, single=False
+):
+    """Categorizes each event of df given a regex per category."""
+    if len(df) == 0:
+        return
+
+    def tags(s: str, regexes: Dict[str, re.Pattern]):
+        return [c for c, r in regexes.items() if len(r.findall(s)) > 0]
+
+    def first_match(s: str, regexes: Dict[str, re.Pattern]):
+        for c, r in regexes.items():
+            if len(r.findall(s)) > 0:
+                return c
+        return None
+
+    df["category"] = df.apply(
+        lambda row: first_match(" ".join(row[columns]), regexes)
+        if single
+        else tags(" ".join(row[columns]), regexes),
+        axis=1,
+    )
+    df["has_category"] = df.apply(
+        lambda row: row.category is not None if single else len(row.category) > 0,
+        axis=1,
+    )
+    logger.debug(f"total: {len(df)}")
+    logger.debug(f"has category: {len(df[df.has_category])}")
+    logger.debug(f"missing category, e.g.:\n{df[~df.has_category][0:10]}")
+
     return df
 
 
@@ -200,84 +246,25 @@ while date < DATE_TO:
         + f" ({working_hours_rounded})"
     )
 
-    # categorize web and edits based on regex
-    regexes = {
-        category: re.compile(regex, re.IGNORECASE)
-        for category, regex in config["categories"].items()
-    }
-
-    def categories(s: str, regexPerCategory: Dict[str, re.Pattern]):
-        return [c for c, r in regexPerCategory.items() if len(r.findall(s)) > 0]
-
-    regexes_proj = {
-        p: re.compile(r, re.IGNORECASE) for p, r in config["projects"].items()
-    }
-
-    def project(s: str, regexPerProject: Dict[str, re.Pattern]):
-        for p, r in regexes_proj.items():
-            if len(r.findall(s)) > 0:
-                return p
-        return None
-
+    # categorize events based on regex
     logger.debug("Categorize website visits")
-    web["categories"] = web.apply(
-        lambda row: categories(row.web_url + row.web_title, regexes), axis=1
-    )
-    web["is_categorized"] = web.apply(lambda row: len(row.categories) > 0, axis=1)
-    logger.debug(f"total: {len(web)}")
-    logger.debug(f"categorized: {len(web[web.is_categorized])}")
-    logger.debug(f"missing categorization, e.g.:\n{web[~web.is_categorized][0:10]}")
-
+    web = aw_categorize(web, r_web, ["web_url", "web_title"])
     logger.debug("Categorize editor events")
-    edits["categories"] = edits.apply(
-        lambda row: categories(
-            row.editor_project + row.editor_file + row.editor_language, regexes
-        ),
-        axis=1,
+    edits = aw_categorize(
+        edits,
+        r_editor,
+        ["editor_project", "editor_file", "editor_language"],
+        single=True,
     )
-    edits["is_categorized"] = edits.apply(lambda row: len(row.categories) > 0, axis=1)
-    logger.debug(f"total: {len(edits)}")
-    logger.debug(f"categorized: {len(edits[edits.is_categorized])}")
-    logger.debug(
-        f"missing categorization, e.g.:\n{edits[~edits.is_categorized][0:10]}"
-    )
-    edits["project"] = edits.apply(
-        lambda row: project(
-            row.editor_project + row.editor_file + row.editor_language, regexes_proj
-        ),
-        axis=1,
-    )
-    edits["has_project"] = edits.apply(lambda row: row.project is not None, axis=1)
-    logger.debug(f"assigned to a project: {len(edits[edits.has_project])}")
-    logger.debug(f"missing a project, e.g.:\n{edits[~edits.has_project][0:10]}")
-
-    # windows distribution (surfing more than programming? ;))
-    regexes_apps = {
-        p: re.compile(r, re.IGNORECASE) for p, r in config["apps"].items()
-    }
-
-    def app(s: str, regexes: Dict[str, re.Pattern]):
-        for c, r in regexes.items():
-            if len(r.findall(s)) > 0:
-                return c
-        return None
-
     logger.debug("Categorize window events")
-    window["app"] = window.apply(
-        lambda row: app(row.window_app, regexes_apps),
-        axis=1,
-    )
-    window["has_app"] = window.apply(lambda row: row.app is not None, axis=1)
-    logger.debug(f"total: {len(window)}")
-    logger.debug(f"categorized: {len(window.has_app)}")
-    logger.debug(f"missing categorization, e.g.:\n{window[~window.has_app][0:10]}")
-    logger.debug(window.groupby("app").duration.sum())
+    window = aw_categorize(window, r_window, ["window_app"], single=True)
 
     # categories surfed (time spent in category is not mutually exclusive!)
-    logger.debug(web.explode("categories").groupby("categories").duration.sum())
-
+    logger.debug(web.explode("category").groupby("category").duration.sum())
     # project percentage to active time based on editor events
-    logger.debug(edits.groupby("project").duration.sum())
+    logger.debug(edits.groupby("category").duration.sum())
+    # windows distribution (surfing more than programming? ;))
+    logger.debug(window.groupby("category").duration.sum())
 
     # git commits
     if len(git) > 0:
