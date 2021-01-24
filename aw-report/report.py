@@ -20,8 +20,6 @@ from utils import *
 
 # %% Settings
 BUCKET_AFK = f"aw-watcher-afk_{socket.gethostname()}"
-BUCKET_WINDOW = f"aw-watcher-window_{socket.gethostname()}"
-BUCKET_WEB = f"aw-watcher-web-firefox"
 BUCKET_EDITOR = f"aw-watcher-editor_{socket.gethostname()}"
 BUCKET_GIT = f"aw-git-hooks_{socket.gethostname()}"
 DATE_FROM = datetime.today().replace(day=1, hour=4, minute=0, second=0, microsecond=0)
@@ -125,8 +123,6 @@ def regexes(config_section: configparser.SectionProxy):
 
 # read and compile regexes from config
 r_editor = regexes(config["projects"])
-r_web = regexes(config["categories"])
-r_window = regexes(config["apps"])
 
 
 # %% Get events
@@ -186,13 +182,8 @@ while date < DATE_TO:
     current_day = (date, date + timedelta(days=1))
 
     logger.debug(f"get aw events of {current_day}")
-    # window bucket shows the current/active application
-    window = aw_events(BUCKET_WINDOW, [current_day], rename={"data": "window"})
     # active time in front of the PC (afk..away-from-keyboard)
     afk = aw_events(BUCKET_AFK, [current_day], rename={"data": "afk"})
-    # duration of web events cannot be used to calculate project time
-    # on window change, the events do not end :(
-    web = aw_events(BUCKET_WEB, [current_day], rename={"data": "web"})
     # events from editors
     # on window change the event ends, as expected, i.e. events show active time (per file)
     # https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.append.html
@@ -249,13 +240,7 @@ while date < DATE_TO:
         + f" ({working_hours_rounded})"
     )
 
-    # categorize events based on regex
-    if len(web) > 0:
-        logger.debug("Categorize website visits")
-        web = aw_categorize(web, r_web, ["web_url", "web_title"])
-        # categories surfed (time spent in category is not mutually exclusive!)
-        logger.debug(web.explode("category").groupby("category").duration.sum())
-
+    # project percentage to active time based on editor events
     if len(edits) > 0:
         logger.debug("Categorize editor events")
         edits = aw_categorize(
@@ -264,14 +249,7 @@ while date < DATE_TO:
             ["editor_project", "editor_file", "editor_language"],
             single=True,
         )
-        # project percentage to active time based on editor events
         logger.debug(edits.groupby("category").duration.sum())
-
-    if len(window) > 0:
-        logger.debug("Categorize window events")
-        window = aw_categorize(window, r_window, ["window_app"], single=True)
-        # windows distribution (surfing more than programming? ;))
-        logger.debug(window.groupby("category").duration.sum())
 
     # git commits
     if len(git) > 0:
