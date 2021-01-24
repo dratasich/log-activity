@@ -252,6 +252,26 @@ while date < DATE_TO:
     logger.debug(f"missing a project, e.g.:\n{edits[~edits.has_project][0:10]}")
 
     # windows distribution (surfing more than programming? ;))
+    regexes_apps = {
+        p: re.compile(r, re.IGNORECASE) for p, r in config["apps"].items()
+    }
+
+    def app(s: str, regexes: Dict[str, re.Pattern]):
+        for c, r in regexes.items():
+            if len(r.findall(s)) > 0:
+                return c
+        return None
+
+    logger.debug("Categorize window events")
+    window["app"] = window.apply(
+        lambda row: app(row.window_app, regexes_apps),
+        axis=1,
+    )
+    window["has_app"] = window.apply(lambda row: row.app is not None, axis=1)
+    logger.debug(f"total: {len(window)}")
+    logger.debug(f"categorized: {len(window.has_app)}")
+    logger.debug(f"missing categorization, e.g.:\n{window[~window.has_app][0:10]}")
+    logger.debug(window.groupby("app").duration.sum())
 
     # categories surfed (time spent in category is not mutually exclusive!)
     logger.debug(web.explode("categories").groupby("categories").duration.sum())
