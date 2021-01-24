@@ -78,6 +78,12 @@ def str_time(date: datetime):
     return date.astimezone(tz=tzlocal()).strftime("%H:%M")
 
 
+def str_delta(time: timedelta):
+    h = int(time.total_seconds() / 3600)
+    m = int((time.total_seconds() % 3600) / 60)
+    return f"{h:02}:{m:02}"
+
+
 def round_timedelta(tm: timedelta, round_to_s=timedelta(minutes=15).total_seconds()):
     tm_rounded = timedelta(
         seconds=int((tm.total_seconds() + round_to_s / 2) / (round_to_s)) * (round_to_s)
@@ -98,7 +104,7 @@ def round_datetime(tm: datetime, round_to_min=15):
 
 
 def issue_to_string(i: pd.DataFrame):
-    issue = i.iloc[0].git_issues
+    issue = str(i.iloc[0].git_issues)
     summary = ""
     titles = i[["git_origin", "git_summary"]].mask(i.git_summary.eq("None")).dropna()
     if len(titles) > 0:
@@ -110,8 +116,11 @@ def issue_to_string(i: pd.DataFrame):
                 + ", ".join(o.git_summary)
             )
         )
-        summary = f" ({'; '.join(repos)})"
-    return f"{issue if issue != 'None' and issue != 'nan' else 'other'}{summary}"
+        summary = "; ".join(repos)
+    if issue == "None" or issue == "nan":
+        return f"{summary}"
+    else:
+        return f"{issue} ({summary})"
 
 
 def regexes(config_section: configparser.SectionProxy):
@@ -123,6 +132,7 @@ def regexes(config_section: configparser.SectionProxy):
 
 # read and compile regexes from config
 r_editor = regexes(config["projects"])
+r_git_repos = regexes(config["project.repos"])
 
 
 # %% Get events
@@ -171,7 +181,8 @@ def aw_categorize(
     )
     logger.debug(f"total: {len(df)}")
     logger.debug(f"has category: {len(df[df.has_category])}")
-    logger.debug(f"missing category, e.g.:\n{df[~df.has_category][0:10]}")
+    if len(df[df.has_category]) < len(df):
+        logger.debug(f"missing category, e.g.:\n{df[~df.has_category][0:10]}")
 
     return df
 
@@ -250,18 +261,42 @@ while date < DATE_TO:
             single=True,
         )
         logger.debug(edits.groupby("category").duration.sum())
+        project_time = edits.groupby("category").apply(
+            lambda g: round_timedelta(timedelta(seconds=g.duration.sum()))
+        )
+        project_time = project_time.append(
+            pd.Series(
+                {
+                    "nan": timedelta(
+                        seconds=(
+                            working_hours_rounded - project_time.sum()
+                        ).total_seconds()
+                    )
+                }
+            )
+        )
+        logger.debug(f"rounded project time:\n{project_time}")
 
     # git commits
     if len(git) > 0:
         if args.commits_sort_by == "timestamp":
             print(git[git.git_hook == "post-commit"])
         elif args.commits_sort_by == "issue":
-            # list of issues to rows (explode, ok, because we don't sum up duration)
-            (
-                git[git.git_hook == "post-commit"]
+            # TODO: categorize git commits according to issues
+            # TODO: categorize based on repo where no issues
+            gitp = (
+                aw_categorize(git, r_git_repos, columns=["git_origin"], single=True)
+                .loc[git.git_hook == "post-commit"]
                 .explode("git_issues")
                 .astype(str)
+                # .drop_duplicates(["git_origin", "git_commit"])
                 .drop_duplicates(["git_origin", "git_summary"])
-                .groupby("git_issues")
-                .apply(lambda g: print(f"    {issue_to_string(g)}"))
+                .groupby(["category"])
+                .apply(
+                    lambda g: print(
+                        f"  {g.iloc[0].category:<15}"
+                        + f" | {str_delta(project_time[g.iloc[0].category])}"
+                        + f" | {issue_to_string(g)}"
+                    )
+                )
             )
