@@ -50,7 +50,7 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-logging.basicConfig(format="[%(asctime)-15s] [%(levelname)-5s] %(message)s")
+logging.basicConfig(format="[%(levelname)-5s] %(message)s")
 logger = logging.getLogger(__name__)
 if args.verbose:
     logger.setLevel(logging.DEBUG)
@@ -101,6 +101,43 @@ def round_datetime(tm: datetime, round_to_min=15):
     )
     logger.debug(f"{round_to_min}s-rounded {tm} to {tm_rounded}")
     return tm_rounded
+
+
+def come_and_go(actual_start: datetime, actual_end: datetime, active: timedelta):
+    """Converts start and end of today to something that is allowed and reflects active time."""
+    weekday = actual_start.isoweekday()
+    # ignore Kernzeit on weekends
+    if weekday == 6 or weekday == 7:
+        logger.debug(f"ignore Kernzeit as it is {actual_start.strftime('%A')}")
+        return actual_start, actual_start + active
+    # Kernzeit
+    # Mon-Thu min is 09:00 - 15:00
+    isotoday = actual_start.date().isoformat()
+    start_max, end_min = (
+        datetime.fromisoformat(f"{isotoday}T09:00:00").astimezone(tz=tzlocal()),
+        datetime.fromisoformat(f"{isotoday}T15:00:00").astimezone(tz=tzlocal()),
+    )
+    if weekday == 5:  # Fri min is 09:00 - 12:00
+        end_min = datetime.fromisoformat(f"{isotoday}T12:00:00").astimezone(
+            tz=tzlocal()
+        )
+    # actual timings within Kernzeit?
+    if actual_start < start_max and actual_start + active >= end_min:
+        return actual_start, actual_start + active
+    # worked enough today?
+    elif active < end_min - start_max:
+        logger.warning(
+            f"Kernzeit-Violation ({str_time(actual_start)} - {str_time(actual_end)}, active={str_delta(active)})"
+        )
+        return start_max, start_max + active
+    # worked enough but started late, so shift start to the left ;)
+    elif actual_start > start_max:
+        return start_max, start_max + active
+    else:
+        logger.error(
+            f"missed a case ({str_time(actual_start)} - {str_time(actual_end)}, active={str_delta(active)})"
+        )
+        return end_min - active, end_min
 
 
 def issue_to_string(i: pd.DataFrame):
@@ -244,11 +281,12 @@ while date < DATE_TO:
     end = round_datetime(
         afk.iloc[-1].timestamp + timedelta(seconds=afk.iloc[-1].duration)
     )
+    come, go = come_and_go(start, end, working_hours_rounded)
 
     print(
-        f"{str_date(start)} {start.strftime('%a')}"
-        + f" | {str_time(start)} - {str_time(end)}"
-        + f" ({working_hours_rounded})"
+        f"{str_date(start)} {start.strftime('%a'):^6}"
+        + f" | {str_delta(working_hours_rounded)}"
+        + f" | {str_time(come)} - {str_time(go)}"
     )
 
     # project percentage to active time based on editor events
