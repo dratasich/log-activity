@@ -9,8 +9,9 @@ import os.path
 import re
 import socket
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 from aw_client import ActivityWatchClient
 from dateutil.tz import tzlocal
@@ -115,7 +116,7 @@ def issue_to_string(i: pd.DataFrame):
     return f"{issue if issue != 'None' and issue != 'nan' else 'other'}{summary}"
 
 
-def regexes(config_section: Dict[str, str]):
+def regexes(config_section: configparser.SectionProxy):
     return {
         category: re.compile(regex, re.IGNORECASE)
         for category, regex in config_section.items()
@@ -132,7 +133,7 @@ r_window = regexes(config["apps"])
 client = ActivityWatchClient("report-client")
 
 
-def aw_events(bucket: str, time_ranges: [(datetime, datetime)], rename={}):
+def aw_events(bucket: str, time_ranges: List[Tuple[datetime, datetime]], rename={}):
     query = f"""
     events = query_bucket('{bucket}');
     RETURN = sort_by_timestamp(events);
@@ -158,7 +159,7 @@ def aw_categorize(
         for c, r in regexes.items():
             if len(r.findall(s)) > 0:
                 return c
-        return None
+        return np.nan
 
     df["category"] = df.apply(
         lambda row: first_match(" ".join(row[columns]), regexes)
@@ -167,7 +168,9 @@ def aw_categorize(
         axis=1,
     )
     df["has_category"] = df.apply(
-        lambda row: row.category is not None if single else len(row.category) > 0,
+        lambda row: not (row.category is None or row.category is np.nan)
+        if single
+        else len(row.category) > 0,
         axis=1,
     )
     logger.debug(f"total: {len(df)}")
@@ -187,7 +190,6 @@ while date < DATE_TO:
     window = aw_events(BUCKET_WINDOW, [current_day], rename={"data": "window"})
     # active time in front of the PC (afk..away-from-keyboard)
     afk = aw_events(BUCKET_AFK, [current_day], rename={"data": "afk"})
-    afk["afk"] = afk["afk_status"].apply(lambda s: s == "afk")
     # duration of web events cannot be used to calculate project time
     # on window change, the events do not end :(
     web = aw_events(BUCKET_WEB, [current_day], rename={"data": "web"})
@@ -220,6 +222,7 @@ while date < DATE_TO:
         continue
 
     # active time
+    afk["afk"] = afk["afk_status"].apply(lambda s: s == "afk")
     active = timedelta(seconds=afk[~afk.afk].duration.sum())
     short_pause = timedelta(minutes=5)
     active_incl_short_pauses = timedelta(
@@ -247,24 +250,28 @@ while date < DATE_TO:
     )
 
     # categorize events based on regex
-    logger.debug("Categorize website visits")
-    web = aw_categorize(web, r_web, ["web_url", "web_title"])
-    logger.debug("Categorize editor events")
-    edits = aw_categorize(
-        edits,
-        r_editor,
-        ["editor_project", "editor_file", "editor_language"],
-        single=True,
-    )
-    logger.debug("Categorize window events")
-    window = aw_categorize(window, r_window, ["window_app"], single=True)
+    if len(web) > 0:
+        logger.debug("Categorize website visits")
+        web = aw_categorize(web, r_web, ["web_url", "web_title"])
+        # categories surfed (time spent in category is not mutually exclusive!)
+        logger.debug(web.explode("category").groupby("category").duration.sum())
 
-    # categories surfed (time spent in category is not mutually exclusive!)
-    logger.debug(web.explode("category").groupby("category").duration.sum())
-    # project percentage to active time based on editor events
-    logger.debug(edits.groupby("category").duration.sum())
-    # windows distribution (surfing more than programming? ;))
-    logger.debug(window.groupby("category").duration.sum())
+    if len(edits) > 0:
+        logger.debug("Categorize editor events")
+        edits = aw_categorize(
+            edits,
+            r_editor,
+            ["editor_project", "editor_file", "editor_language"],
+            single=True,
+        )
+        # project percentage to active time based on editor events
+        logger.debug(edits.groupby("category").duration.sum())
+
+    if len(window) > 0:
+        logger.debug("Categorize window events")
+        window = aw_categorize(window, r_window, ["window_app"], single=True)
+        # windows distribution (surfing more than programming? ;))
+        logger.debug(window.groupby("category").duration.sum())
 
     # git commits
     if len(git) > 0:
@@ -272,7 +279,8 @@ while date < DATE_TO:
             print(git[git.git_hook == "post-commit"])
         elif args.commits_sort_by == "issue":
             # list of issues to rows (explode, ok, because we don't sum up duration)
-            git[git.git_hook == "post-commit"].explode("git_issues") \
+            git[git.git_hook == "post-commit"] \
+                .explode("git_issues") \
                 .astype(str) \
                 .drop_duplicates(["git_origin", "git_summary"]) \
                 .groupby("git_issues") \
