@@ -51,16 +51,19 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+logging.basicConfig(format="[%(asctime)-15s] [%(levelname)-5s] %(message)s")
+logger = logging.getLogger(__name__)
 if args.verbose:
-    logging.basicConfig(
-        level=logging.DEBUG, format="[%(asctime)-15s] [%(levelname)-5s] %(message)s"
-    )
+    logger.setLevel(logging.DEBUG)
+else:
+    logger.setLevel(logging.INFO)
+
 
 # Advanced configuration
 config = configparser.ConfigParser()
 config.read("config.ini")
 if not config.has_section("projects"):
-    logging.warning("No configuration for project mapping (fill `config.ini`)!")
+    logger.warning("No configuration for project mapping (fill `config.ini`)!")
 
 
 # %% Helpers
@@ -80,7 +83,7 @@ def round_timedelta(tm: timedelta, round_to_s=timedelta(minutes=15).total_second
     tm_rounded = timedelta(
         seconds=int((tm.total_seconds() + round_to_s / 2) / (round_to_s)) * (round_to_s)
     )
-    logging.debug(f"{round_to_s}s-rounded {tm} to {tm_rounded}")
+    logger.debug(f"{round_to_s}s-rounded {tm} to {tm_rounded}")
     return tm_rounded
 
 
@@ -91,7 +94,7 @@ def round_datetime(tm: datetime, round_to_min=15):
         seconds=tm_rounded.second,
         microseconds=tm_rounded.microsecond,
     )
-    logging.debug(f"{round_to_min}s-rounded {tm} to {tm_rounded}")
+    logger.debug(f"{round_to_min}s-rounded {tm} to {tm_rounded}")
     return tm_rounded
 
 
@@ -130,10 +133,10 @@ def aw_events(bucket: str, time_ranges: [(datetime, datetime)], rename={}):
 
 date = args.date
 while date < DATE_TO:
-    logging.debug(f">>> {date}")
+    logger.debug(f">>> {date}")
     current_day = (date, date + timedelta(days=1))
 
-    logging.debug(f"get aw events of {current_day}")
+    logger.debug(f"get aw events of {current_day}")
     # window bucket shows the current/active application
     window = aw_events(BUCKET_WINDOW, [current_day], rename={"data": "window"})
     # active time in front of the PC (afk..away-from-keyboard)
@@ -176,12 +179,12 @@ while date < DATE_TO:
     active_incl_short_pauses = timedelta(
         seconds=afk[~afk.afk | (afk.duration < short_pause.seconds)].duration.sum()
     )
-    logging.debug(
+    logger.debug(
         f"not-afk: {active}, with pauses < {short_pause.seconds}s: {active_incl_short_pauses}"
     )
     working_hours = active_incl_short_pauses
     if active_incl_short_pauses >= timedelta(hours=6):
-        logging.debug(f"add 30min break")
+        logger.debug(f"add 30min break")
         working_hours += timedelta(minutes=30)
     working_hours_rounded = round_timedelta(working_hours)
 
@@ -216,16 +219,16 @@ while date < DATE_TO:
                 return p
         return None
 
-    logging.debug("Categorize website visits")
+    logger.debug("Categorize website visits")
     web["categories"] = web.apply(
         lambda row: categories(row.web_url + row.web_title, regexes), axis=1
     )
     web["is_categorized"] = web.apply(lambda row: len(row.categories) > 0, axis=1)
-    logging.debug(f"total: {len(web)}")
-    logging.debug(f"categorized: {len(web[web.is_categorized])}")
-    logging.debug(f"missing categorization, e.g.: {web[~web.is_categorized][0:10]}")
+    logger.debug(f"total: {len(web)}")
+    logger.debug(f"categorized: {len(web[web.is_categorized])}")
+    logger.debug(f"missing categorization, e.g.:\n{web[~web.is_categorized][0:10]}")
 
-    logging.debug("Categorize editor events")
+    logger.debug("Categorize editor events")
     edits["categories"] = edits.apply(
         lambda row: categories(
             row.editor_project + row.editor_file + row.editor_language, regexes
@@ -233,9 +236,11 @@ while date < DATE_TO:
         axis=1,
     )
     edits["is_categorized"] = edits.apply(lambda row: len(row.categories) > 0, axis=1)
-    logging.debug(f"total: {len(edits)}")
-    logging.debug(f"categorized: {len(edits[edits.is_categorized])}")
-    logging.debug(f"missing categorization, e.g.: {edits[~edits.is_categorized][0:10]}")
+    logger.debug(f"total: {len(edits)}")
+    logger.debug(f"categorized: {len(edits[edits.is_categorized])}")
+    logger.debug(
+        f"missing categorization, e.g.:\n{edits[~edits.is_categorized][0:10]}"
+    )
     edits["project"] = edits.apply(
         lambda row: project(
             row.editor_project + row.editor_file + row.editor_language, regexes_proj
@@ -243,16 +248,16 @@ while date < DATE_TO:
         axis=1,
     )
     edits["has_project"] = edits.apply(lambda row: row.project is not None, axis=1)
-    logging.debug(f"assigned to a project: {len(edits[edits.has_project])}")
-    logging.debug(f"missing a project, e.g.: {edits[~edits.has_project][0:10]}")
+    logger.debug(f"assigned to a project: {len(edits[edits.has_project])}")
+    logger.debug(f"missing a project, e.g.:\n{edits[~edits.has_project][0:10]}")
 
     # windows distribution (surfing more than programming? ;))
 
     # categories surfed (time spent in category is not mutually exclusive!)
-    logging.debug(web.explode("categories").groupby("categories").duration.sum())
+    logger.debug(web.explode("categories").groupby("categories").duration.sum())
 
     # project percentage to active time based on editor events
-    logging.debug(edits.groupby("project").duration.sum())
+    logger.debug(edits.groupby("project").duration.sum())
 
     # git commits
     if len(git) > 0:
