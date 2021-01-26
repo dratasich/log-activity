@@ -320,6 +320,7 @@ while date < DATE_TO:
                 }
             )
         )
+        projects = pd.DataFrame(project_time, columns=["time"])
         logger.debug(f"rounded project time:\n{project_time}")
 
     # git commits
@@ -344,16 +345,16 @@ while date < DATE_TO:
             )
             # update NaNs of category column (issue first, then repo)
             giti.update(gitr)  # !!has_category probably invalidated!!
-            (
+            # add description from git to project
+            projects["git"] = (
                 giti.astype(str)
                 # .drop_duplicates(["git_origin", "git_commit"])
                 .drop_duplicates(["git_origin", "git_summary"])
                 .groupby(["category"])
-                .apply(
-                    lambda g: print(
-                        f"  {g.iloc[0].category:<15}"
-                        + f" | {str_delta(project_time.get(g.iloc[0].category, timedelta(seconds=0)))}"
-                        + f" | {issue_to_string(g)}"
-                    )
-                )
+                .apply(lambda g: issue_to_string(g))
             )
+
+    # print time and description per projects
+    for p in projects.index:
+        info = projects.loc[p]
+        print(f"  {p:<15} | {str_delta(info.time)} | {info.get('git', '')}")
