@@ -170,6 +170,7 @@ def regexes(config_section: configparser.SectionProxy):
 # read and compile regexes from config
 r_editor = regexes(config["projects"])
 r_git_repos = regexes(config["project.repos"])
+r_git_issues = regexes(config["project.issues"])
 
 
 # %% Get events
@@ -189,11 +190,14 @@ def aw_events(bucket: str, time_ranges: List[Tuple[datetime, datetime]], rename=
 
 
 def aw_categorize(
-    df: pd.DataFrame, regexes: Dict[str, re.Pattern], columns, single=False
+    df: pd.DataFrame,
+    regexes: Dict[str, re.Pattern],
+    columns,
+    single=False,
 ):
     """Categorizes each event of df given a regex per category."""
     if len(df) == 0:
-        return
+        return df
 
     def tags(s: str, regexes: Dict[str, re.Pattern]):
         return [c for c, r in regexes.items() if len(r.findall(s)) > 0]
@@ -204,16 +208,19 @@ def aw_categorize(
                 return c
         return np.nan
 
-    df["category"] = df.dropna().apply(
+    df_category = df.dropna(subset=columns).apply(
         lambda row: first_match(" ".join(row[columns]), regexes)
         if single
         else tags(" ".join(row[columns]), regexes),
         axis=1,
     )
+    if len(df_category) == 0:
+        logger.warning(f"failed to assign a single category given {columns}")
+        df["category"] = np.nan
+    else:
+        df["category"] = df_category
     df["has_category"] = df.apply(
-        lambda row: not (row.category is None or row.category is np.nan)
-        if single
-        else len(row.category) > 0,
+        lambda row: not pd.isna(row.category) if single else len(row.category) > 0,
         axis=1,
     )
     logger.debug(f"total: {len(df)}")
@@ -320,13 +327,25 @@ while date < DATE_TO:
         if args.commits_sort_by == "timestamp":
             print(git[git.git_hook == "post-commit"])
         elif args.commits_sort_by == "issue":
-            # TODO: categorize git commits according to issues
-            # TODO: categorize based on repo where no issues
-            gitp = (
-                aw_categorize(git, r_git_repos, columns=["git_origin"], single=True)
-                .loc[git.git_hook == "post-commit"]
-                .explode("git_issues")
-                .astype(str)
+            # prepare list of issues
+            commits = git[git.git_hook == "post-commit"].explode("git_issues")
+            # categorize git commits according to issues or repos
+            giti = aw_categorize(
+                commits.copy(),
+                r_git_issues,
+                columns=["git_issues"],
+                single=True,
+            )
+            gitr = aw_categorize(
+                commits.copy(),
+                r_git_repos,
+                columns=["git_origin"],
+                single=True,
+            )
+            # update NaNs of category column (issue first, then repo)
+            giti.update(gitr)  # !!has_category probably invalidated!!
+            (
+                giti.astype(str)
                 # .drop_duplicates(["git_origin", "git_commit"])
                 .drop_duplicates(["git_origin", "git_summary"])
                 .groupby(["category"])
