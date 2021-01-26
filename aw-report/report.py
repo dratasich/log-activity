@@ -122,7 +122,7 @@ def come_and_go(actual_start: datetime, actual_end: datetime, active: timedelta)
             tz=tzlocal()
         )
     # actual timings within Kernzeit?
-    if actual_start < start_max and actual_start + active >= end_min:
+    if actual_start <= start_max and actual_start + active >= end_min:
         return actual_start, actual_start + active
     # worked enough today?
     elif active < end_min - start_max:
@@ -204,7 +204,7 @@ def aw_categorize(
                 return c
         return np.nan
 
-    df["category"] = df.apply(
+    df["category"] = df.dropna().apply(
         lambda row: first_match(" ".join(row[columns]), regexes)
         if single
         else tags(" ".join(row[columns]), regexes),
@@ -333,7 +333,7 @@ while date < DATE_TO:
                 .apply(
                     lambda g: print(
                         f"  {g.iloc[0].category:<15}"
-                        + f" | {str_delta(project_time[g.iloc[0].category])}"
+                        + f" | {str_delta(project_time.get(g.iloc[0].category, timedelta(seconds=0)))}"
                         + f" | {issue_to_string(g)}"
                     )
                 )
