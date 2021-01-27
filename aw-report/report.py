@@ -61,8 +61,19 @@ else:
 # Advanced configuration
 config = configparser.ConfigParser()
 config.read("config.ini")
-if not config.has_section("projects"):
-    logger.warning("No configuration for project mapping (fill `config.ini`)!")
+
+
+# Output
+def project_reset():
+    return pd.DataFrame(columns=["project", "time", "git"]).set_index("project")
+
+
+def project_add(project: str, time: timedelta = timedelta(seconds=0), git: str = ""):
+    if project in projects.index:
+        projects.loc[project].time += time
+        projects.loc[project].git += str(git)
+    else:
+        projects.loc[project] = {"time": time, "git": str(git)}
 
 
 # %% Helpers
@@ -168,7 +179,7 @@ def regexes(config_section: configparser.SectionProxy):
 
 
 # read and compile regexes from config
-r_editor = regexes(config["projects"])
+r_editor = regexes(config["project.editors"])
 r_git_repos = regexes(config["project.repos"])
 r_git_issues = regexes(config["project.issues"])
 
@@ -235,6 +246,7 @@ date = args.date
 while date < DATE_TO:
     logger.debug(f">>> {date}")
     current_day = (date, date + timedelta(days=1))
+    projects = project_reset()
 
     logger.debug(f"get aw events of {current_day}")
     # active time in front of the PC (afk..away-from-keyboard)
@@ -306,22 +318,12 @@ while date < DATE_TO:
             single=True,
         )
         logger.debug(edits.groupby("category").duration.sum())
-        project_time = edits.groupby("category").apply(
-            lambda g: round_timedelta(timedelta(seconds=g.duration.sum()))
-        )
-        project_time = project_time.append(
-            pd.Series(
-                {
-                    "nan": timedelta(
-                        seconds=(
-                            working_hours_rounded - project_time.sum()
-                        ).total_seconds()
-                    )
-                }
+        edits.groupby("category").apply(
+            lambda g: project_add(
+                g.iloc[0].category, timedelta(seconds=g.duration.sum())
             )
         )
-        projects = pd.DataFrame(project_time, columns=["time"])
-        logger.debug(f"rounded project time:\n{project_time}")
+        logger.debug(f"project considering editors:\n{projects}")
 
     # git commits
     if len(git) > 0:
@@ -346,15 +348,23 @@ while date < DATE_TO:
             # update NaNs of category column (issue first, then repo)
             giti.update(gitr)  # !!has_category probably invalidated!!
             # add description from git to project
-            projects["git"] = (
+            (
                 giti.astype(str)
                 # .drop_duplicates(["git_origin", "git_commit"])
                 .drop_duplicates(["git_origin", "git_summary"])
                 .groupby(["category"])
-                .apply(lambda g: issue_to_string(g))
+                .apply(
+                    lambda g: project_add(g.iloc[0].category, git=issue_to_string(g))
+                )
             )
 
     # print time and description per projects
+    projects.time = projects.time.apply(lambda t: round_timedelta(t))
+    project_add(
+        "other",
+        working_hours_rounded
+        - (projects.time.sum() if len(projects) > 0 else timedelta(seconds=0)),
+    )
     for p in projects.index:
         info = projects.loc[p]
-        print(f"  {p:<15} | {str_delta(info.time)} | {info.get('git', '')}")
+        print(f"  {p:<15} | {str_delta(info.time)} | {info.git}")
