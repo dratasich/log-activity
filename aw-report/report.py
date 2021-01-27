@@ -182,6 +182,7 @@ def regexes(config_section: configparser.SectionProxy):
 r_editor = regexes(config["project.editors"])
 r_git_repos = regexes(config["project.repos"])
 r_git_issues = regexes(config["project.issues"])
+r_web = regexes(config["project.websites"])
 
 
 # %% Get events
@@ -192,6 +193,23 @@ def aw_events(bucket: str, time_ranges: List[Tuple[datetime, datetime]], rename=
     query = f"""
     events = query_bucket('{bucket}');
     RETURN = sort_by_timestamp(events);
+    """
+    events = client.query(query, time_ranges)[0]
+    df = pd.DataFrame([flatten_json(e, rename) for e in events])
+    if not df.empty:
+        df.timestamp = pd.to_datetime(df.timestamp)
+    return df
+
+
+def aw_web_events(time_ranges: List[Tuple[datetime, datetime]], rename={}):
+    query = f"""
+    afk_events = query_bucket(find_bucket("aw-watcher-afk_"));
+    window_events = query_bucket(find_bucket("aw-watcher-window_"));
+    window_events = filter_period_intersect(window_events, filter_keyvals(afk_events, "status", ["not-afk"]));
+    web_events = query_bucket(find_bucket("aw-watcher-web"));
+    web_events = filter_period_intersect(web_events, filter_keyvals(window_events, "app", ["Firefox", "Chrome"]));
+    merged_events = merge_events_by_keys(web_events, ["app", "title"]);
+    RETURN = sort_by_timestamp(web_events);
     """
     events = client.query(query, time_ranges)[0]
     df = pd.DataFrame([flatten_json(e, rename) for e in events])
@@ -266,6 +284,7 @@ while date < DATE_TO:
         ignore_index=True,
     )
     git = aw_events(BUCKET_GIT, [current_day], rename={"data": "git"})
+    web = aw_web_events([current_day], rename={"data": "web"})
 
     # step for next day
     date = date + timedelta(days=1)
@@ -357,6 +376,28 @@ while date < DATE_TO:
                     lambda g: project_add(g.iloc[0].category, git=issue_to_string(g))
                 )
             )
+
+    # web visits
+    if len(web) > 0:
+        web = aw_categorize(
+            web,
+            r_web,
+            ["web_url", "web_title"],
+            single=True,
+        )
+        web.groupby("category").apply(
+            lambda g: project_add(
+                g.iloc[0].category,
+                timedelta(seconds=g.duration.sum()),
+                ", ".join(
+                    g.sort_values(by="duration")
+                    .tail()
+                    .web_title.drop_duplicates()
+                    .to_list()
+                ),
+            )
+        )
+        logger.debug(f"web:\n{web.groupby('category').duration.sum()}")
 
     # print time and description per projects
     projects.time = projects.time.apply(lambda t: round_timedelta(t))
