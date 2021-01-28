@@ -65,15 +65,15 @@ config.read("config.ini")
 
 # Output
 def project_reset():
-    return pd.DataFrame(columns=["project", "time", "git"]).set_index("project")
+    return pd.DataFrame(columns=["project", "time", "desc"]).set_index("project")
 
 
-def project_add(project: str, time: timedelta = timedelta(seconds=0), git: str = ""):
+def project_add(project: str, time: timedelta = timedelta(seconds=0), desc: str = ""):
     if project in projects.index:
-        projects.loc[project].time += time
-        projects.loc[project].git += str(git)
+        projects.at[project, "time"] = projects.loc[project].time + time
+        projects.at[project, "desc"] = projects.loc[project].desc + " " + str(desc)
     else:
-        projects.loc[project] = {"time": time, "git": str(git)}
+        projects.loc[project] = {"time": time, "desc": str(desc)}
 
 
 # %% Helpers
@@ -373,7 +373,7 @@ while date < DATE_TO:
                 .drop_duplicates(["git_origin", "git_summary"])
                 .groupby(["category"])
                 .apply(
-                    lambda g: project_add(g.iloc[0].category, git=issue_to_string(g))
+                    lambda g: project_add(g.iloc[0].category, desc=issue_to_string(g))
                 )
             )
 
@@ -408,4 +408,4 @@ while date < DATE_TO:
     )
     for p in projects.index:
         info = projects.loc[p]
-        print(f"  {p:<15} | {str_delta(info.time)} | {info.git}")
+        print(f"  {p:<15} | {str_delta(info.time)} | {info.desc}")
