@@ -350,7 +350,7 @@ while date < DATE_TO:
             print(git[git.git_hook == "post-commit"])
         elif args.commits_sort_by == "issue":
             # prepare list of issues
-            commits = git[git.git_hook == "post-commit"].explode("git_issues")
+            commits = git[git.git_hook == "post-commit"].explode("git_issues").reset_index(drop=True)
             # categorize git commits according to issues or repos
             giti = aw_categorize(
                 commits.copy(),
