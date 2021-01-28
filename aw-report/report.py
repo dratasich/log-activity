@@ -292,7 +292,9 @@ while date < DATE_TO:
     # new week formatting
     weekday = date.weekday()
     if weekday == 1:
-        print("{:-^80}".format(f" Week {date.isocalendar()[1]} "))
+        print("{:=^80}".format(f" Week {date.isocalendar()[1]} "))
+    else:
+        print("{:-^80}".format(""))
 
     if len(afk) == 0:
         # no events at all on this day
@@ -390,7 +392,8 @@ while date < DATE_TO:
                 g.iloc[0].category,
                 timedelta(seconds=g.duration.sum()),
                 ", ".join(
-                    g.sort_values(by="duration")
+                    g[g.duration >= timedelta(minutes=5).total_seconds()]
+                    .sort_values(by="duration")
                     .tail()
                     .web_title.drop_duplicates()
                     .to_list()
