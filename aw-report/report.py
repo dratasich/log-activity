@@ -310,23 +310,28 @@ while date < DATE_TO:
     logger.debug(
         f"not-afk: {active}, with pauses < {short_pause.seconds}s: {active_incl_short_pauses}"
     )
+    # consider lunch break (a must when time >= 6h)
     working_hours = active_incl_short_pauses
+    working_hours_incl_lunch = working_hours
     if active_incl_short_pauses >= timedelta(hours=6):
         logger.debug(f"add 30min break")
-        working_hours += timedelta(minutes=30)
-    working_hours_rounded = round_timedelta(working_hours)
+        working_hours_incl_lunch += timedelta(minutes=30)
+    # round to 15min
+    working_hours = round_timedelta(working_hours)
+    working_hours_incl_lunch = round_timedelta(working_hours_incl_lunch)
 
     # start and end of day
     start = round_datetime(afk.iloc[0].timestamp)
     end = round_datetime(
         afk.iloc[-1].timestamp + timedelta(seconds=afk.iloc[-1].duration)
     )
-    come, go = come_and_go(start, end, working_hours_rounded)
+    come, go = come_and_go(start, end, working_hours_incl_lunch)
 
     print(
         f"{str_date(start)} {start.strftime('%a'):^6}"
-        + f" | {str_delta(working_hours_rounded)}"
+        + f" | {str_delta(working_hours)}"
         + f" | {str_time(come)} - {str_time(go)}"
+        + f"{' (incl. lunch)' if working_hours_incl_lunch > working_hours else ''}"
     )
 
     # project percentage to active time based on editor events
