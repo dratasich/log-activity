@@ -384,10 +384,13 @@ while date < DATE_TO:
             (
                 giti.astype(str)
                 # .drop_duplicates(["git_origin", "git_commit"])
-                .drop_duplicates(["git_origin", "git_summary"])
+                .drop_duplicates(["git_origin", "git_issues", "git_summary"])
                 .groupby(["category"])
                 .apply(
-                    lambda g: project_add(g.iloc[0].category, desc=issue_to_string(g))
+                    lambda g: project_add(
+                        g.iloc[0].category,
+                        desc=", ".join(g.groupby("git_issues").apply(lambda i: issue_to_string(i)))
+                    )
                 )
             )
 
