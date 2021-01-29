@@ -48,6 +48,10 @@ parser.add_argument(
 parser.add_argument(
     "-v", "--verbose", action="store_true", help="Verbose logging (debug)."
 )
+parser.add_argument(
+    "-t", "--time-only", action="store_true",
+    help="Print only come and go, and total time per day."
+)
 args = parser.parse_args()
 
 logging.basicConfig(format="[%(levelname)-5s] %(message)s")
@@ -333,6 +337,9 @@ while date < DATE_TO:
         + f" | {str_time(come)} - {str_time(go)}"
         + f"{' (incl. lunch)' if working_hours_incl_lunch > working_hours else ''}"
     )
+
+    if args.time_only:
+        continue
 
     # project percentage to active time based on editor events
     if len(edits) > 0:
