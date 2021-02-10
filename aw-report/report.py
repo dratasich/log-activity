@@ -52,6 +52,12 @@ parser.add_argument(
     "-t", "--time-only", action="store_true",
     help="Print only come and go, and total time per day."
 )
+parser.add_argument(
+    "-m",
+    "--meetings",
+    type=str,
+    default=f"{DATE_FROM.strftime('%Y-%m')}_m365calendar.json",
+)
 args = parser.parse_args()
 
 logging.basicConfig(format="[%(levelname)-5s] %(message)s")
@@ -264,6 +270,29 @@ def aw_categorize(
     return df
 
 
+# load calendar (not synced in aw)
+calendar = pd.read_json(args.meetings, orient="records")
+if len(calendar) > 0:
+    # filter columns
+    calendar = calendar[
+        ["subject", "startWithTimeZone", "endWithTimeZone", "categories"]
+    ]
+    # explode and filter categories (if len(categories) > 1, take only one)
+    calendar = (
+        calendar.explode("categories")
+        .dropna()
+        .drop_duplicates(["subject", "startWithTimeZone", "endWithTimeZone"])
+    )
+    # drop private events
+    calendar = calendar[calendar["categories"] != "privat"]
+    # calculate event duration
+    calendar = calendar.astype(
+        {"startWithTimeZone": "datetime64", "endWithTimeZone": "datetime64"}
+    )
+    calendar["duration"] = calendar["endWithTimeZone"] - calendar["startWithTimeZone"]
+    # add date column for grouping per day
+    calendar["date"] = calendar["startWithTimeZone"].dt.floor("d")
+
 date = args.date
 while date < DATE_TO:
     logger.debug(f">>> {date}")
@@ -357,6 +386,21 @@ while date < DATE_TO:
             )
         )
         logger.debug(f"project considering editors:\n{projects}")
+
+    # meetings
+    try:
+        meetings = calendar[calendar.date == pd.to_datetime(current_day[0]).floor("d")]
+        if len(meetings) > 0:
+            # add info to projects
+            meetings.groupby("categories").apply(
+                lambda g: project_add(
+                    g.iloc[0].categories,
+                    g.duration.sum(),
+                    "meetings: " + ", ".join(g.subject.to_list()),
+                )
+            )
+    except KeyError as e:
+        logger.debug(f"no meetings on this day")
 
     # git commits
     if len(git) > 0:
