@@ -16,6 +16,7 @@ import pandas as pd
 from aw_client import ActivityWatchClient
 from dateutil.tz import tzlocal
 
+from reader.m365calendar import M365CalendarReader
 from utils import *
 
 # %% Settings
@@ -271,31 +272,7 @@ def aw_categorize(
 
 
 # load calendar (not synced in aw)
-try:
-    calendar = pd.read_json(args.meetings, orient="records")
-except:
-    logger.warning("failed to read meetings (json array from M365 calendar)")
-    calendar = []
-if len(calendar) > 0:
-    # filter columns
-    calendar = calendar[
-        ["subject", "startWithTimeZone", "endWithTimeZone", "categories"]
-    ]
-    # explode and filter categories (if len(categories) > 1, take only one)
-    calendar = (
-        calendar.explode("categories")
-        .dropna()
-        .drop_duplicates(["subject", "startWithTimeZone", "endWithTimeZone"])
-    )
-    # drop private events
-    calendar = calendar[calendar["categories"] != "privat"]
-    # calculate event duration
-    calendar = calendar.astype(
-        {"startWithTimeZone": "datetime64", "endWithTimeZone": "datetime64"}
-    )
-    calendar["duration"] = calendar["endWithTimeZone"] - calendar["startWithTimeZone"]
-    # add date column for grouping per day
-    calendar["date"] = calendar["startWithTimeZone"].dt.floor("d")
+calendar = M365CalendarReader(args.meetings)
 
 date = args.date
 while date < DATE_TO:
@@ -392,20 +369,16 @@ while date < DATE_TO:
         logger.debug(f"project considering editors:\n{projects}")
 
     # meetings
-    if len(calendar) > 0:
-        try:
-            meetings = calendar[calendar.date == pd.to_datetime(current_day[0]).floor("d")]
-            if len(meetings) > 0:
-                # add info to projects
-                meetings.groupby("categories").apply(
-                    lambda g: project_add(
-                        g.iloc[0].categories,
-                        g.duration.sum(),
-                        "meetings: " + ", ".join(g.subject.to_list()),
-                    )
-                )
-        except KeyError as e:
-            logger.debug(f"no meetings on this day")
+    meetings = calendar.events_from(current_day[0])
+    if meetings is not None and len(meetings) > 0:
+        # add info to projects
+        meetings.groupby("categories").apply(
+            lambda g: project_add(
+                g.iloc[0].categories,
+                g.duration.sum(),
+                "meetings: " + ", ".join(g.subject.to_list()),
+            )
+        )
 
     # git commits
     if len(git) > 0:
