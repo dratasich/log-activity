@@ -16,6 +16,7 @@ import pandas as pd
 from aw_client import ActivityWatchClient
 from dateutil.tz import tzlocal
 
+from models.activities import Activities
 from reader.m365calendar import M365CalendarReader
 from utils import *
 
@@ -72,19 +73,6 @@ else:
 # Advanced configuration
 config = configparser.ConfigParser()
 config.read("config.ini")
-
-
-# Output
-def project_reset():
-    return pd.DataFrame(columns=["project", "time", "desc"]).set_index("project")
-
-
-def project_add(project: str, time: timedelta = timedelta(seconds=0), desc: str = ""):
-    if project in projects.index:
-        projects.at[project, "time"] = projects.loc[project].time + time
-        projects.at[project, "desc"] = projects.loc[project].desc + " " + str(desc)
-    else:
-        projects.loc[project] = {"time": time, "desc": str(desc)}
 
 
 # %% Helpers
@@ -278,7 +266,7 @@ date = args.date
 while date < DATE_TO:
     logger.debug(f">>> {date}")
     current_day = (date, date + timedelta(days=1))
-    projects = project_reset()
+    projects = Activities()
 
     logger.debug(f"get aw events of {current_day}")
     # active time in front of the PC (afk..away-from-keyboard)
@@ -362,8 +350,8 @@ while date < DATE_TO:
         )
         logger.debug(edits.groupby("category").duration.sum())
         edits.groupby("category").apply(
-            lambda g: project_add(
-                g.iloc[0].category, timedelta(seconds=g.duration.sum())
+            lambda g: projects.add(
+                g.iloc[0].category, current_day[0], timedelta(seconds=g.duration.sum())
             )
         )
         logger.debug(f"project considering editors:\n{projects}")
@@ -373,8 +361,9 @@ while date < DATE_TO:
     if meetings is not None and len(meetings) > 0:
         # add info to projects
         meetings.groupby("categories").apply(
-            lambda g: project_add(
+            lambda g: projects.add(
                 g.iloc[0].categories,
+                current_day[0],
                 g.duration.sum(),
                 "meetings: " + ", ".join(g.subject.to_list()),
             )
@@ -409,8 +398,9 @@ while date < DATE_TO:
                 .drop_duplicates(["git_origin", "git_issues", "git_summary"])
                 .groupby(["category"])
                 .apply(
-                    lambda g: project_add(
+                    lambda g: projects.add(
                         g.iloc[0].category,
+                        current_day[0],
                         desc=", ".join(g.groupby("git_issues").apply(lambda i: issue_to_string(i)))
                     )
                 )
@@ -425,8 +415,9 @@ while date < DATE_TO:
             single=True,
         )
         web.groupby("category").apply(
-            lambda g: project_add(
+            lambda g: projects.add(
                 g.iloc[0].category,
+                current_day[0],
                 timedelta(seconds=g.duration.sum()),
                 ", ".join(
                     g[g.duration >= timedelta(minutes=5).total_seconds()]
@@ -440,12 +431,8 @@ while date < DATE_TO:
         logger.debug(f"web:\n{web.groupby('category').duration.sum()}")
 
     # print time and description per projects
-    projects.time = projects.time.apply(lambda t: round_timedelta(t))
-    project_add(
-        "other",
-        working_hours_rounded
-        - (projects.time.sum() if len(projects) > 0 else timedelta(seconds=0)),
-    )
+    projects = projects.aggregate(current_day)
+    # TODO: round time and add other
     for p in projects.index:
         info = projects.loc[p]
-        print(f"  {p:<15} | {str_delta(info.time)} | {info.desc}")
+        print(f"  {p[1]:<15} | {str_delta(info.time)} | {info.desc}")
