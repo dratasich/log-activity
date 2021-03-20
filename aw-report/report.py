@@ -271,7 +271,11 @@ def aw_categorize(
 
 
 # load calendar (not synced in aw)
-calendar = pd.read_json(args.meetings, orient="records")
+try:
+    calendar = pd.read_json(args.meetings, orient="records")
+except:
+    logger.warning("failed to read meetings (json array from M365 calendar)")
+    calendar = []
 if len(calendar) > 0:
     # filter columns
     calendar = calendar[
@@ -388,19 +392,20 @@ while date < DATE_TO:
         logger.debug(f"project considering editors:\n{projects}")
 
     # meetings
-    try:
-        meetings = calendar[calendar.date == pd.to_datetime(current_day[0]).floor("d")]
-        if len(meetings) > 0:
-            # add info to projects
-            meetings.groupby("categories").apply(
-                lambda g: project_add(
-                    g.iloc[0].categories,
-                    g.duration.sum(),
-                    "meetings: " + ", ".join(g.subject.to_list()),
+    if len(calendar) > 0:
+        try:
+            meetings = calendar[calendar.date == pd.to_datetime(current_day[0]).floor("d")]
+            if len(meetings) > 0:
+                # add info to projects
+                meetings.groupby("categories").apply(
+                    lambda g: project_add(
+                        g.iloc[0].categories,
+                        g.duration.sum(),
+                        "meetings: " + ", ".join(g.subject.to_list()),
+                    )
                 )
-            )
-    except KeyError as e:
-        logger.debug(f"no meetings on this day")
+        except KeyError as e:
+            logger.debug(f"no meetings on this day")
 
     # git commits
     if len(git) > 0:
