@@ -17,6 +17,7 @@ from aw_client import ActivityWatchClient
 from dateutil.tz import tzlocal
 
 from models.activities import Activities
+from models.working_hours import WorkingHours
 from reader.m365calendar import M365CalendarReader
 from utils import *
 
@@ -92,62 +93,6 @@ def str_delta(time: timedelta):
     h = int(time.total_seconds() / 3600)
     m = int((time.total_seconds() % 3600) / 60)
     return f"{h:02}:{m:02}"
-
-
-def round_timedelta(tm: timedelta, round_to_s=timedelta(minutes=15).total_seconds()):
-    tm_rounded = timedelta(
-        seconds=int((tm.total_seconds() + round_to_s / 2) / (round_to_s)) * (round_to_s)
-    )
-    logger.debug(f"{round_to_s}s-rounded {tm} to {tm_rounded}")
-    return tm_rounded
-
-
-def round_datetime(tm: datetime, round_to_min=15):
-    tm_rounded = tm + timedelta(minutes=float(round_to_min) / 2)
-    tm_rounded -= timedelta(
-        minutes=tm_rounded.minute % round_to_min,
-        seconds=tm_rounded.second,
-        microseconds=tm_rounded.microsecond,
-    )
-    logger.debug(f"{round_to_min}s-rounded {tm} to {tm_rounded}")
-    return tm_rounded
-
-
-def come_and_go(actual_start: datetime, actual_end: datetime, active: timedelta):
-    """Converts start and end of today to something that is allowed and reflects active time."""
-    weekday = actual_start.isoweekday()
-    # ignore Kernzeit on weekends
-    if weekday == 6 or weekday == 7:
-        logger.debug(f"ignore Kernzeit as it is {actual_start.strftime('%A')}")
-        return actual_start, actual_start + active
-    # Kernzeit
-    # Mon-Thu min is 09:00 - 15:00
-    isotoday = actual_start.date().isoformat()
-    start_max, end_min = (
-        datetime.fromisoformat(f"{isotoday}T09:00:00").astimezone(tz=tzlocal()),
-        datetime.fromisoformat(f"{isotoday}T15:00:00").astimezone(tz=tzlocal()),
-    )
-    if weekday == 5:  # Fri min is 09:00 - 12:00
-        end_min = datetime.fromisoformat(f"{isotoday}T12:00:00").astimezone(
-            tz=tzlocal()
-        )
-    # actual timings within Kernzeit?
-    if actual_start <= start_max and actual_start + active >= end_min:
-        return actual_start, actual_start + active
-    # worked enough today?
-    elif active < end_min - start_max:
-        logger.warning(
-            f"Kernzeit-Violation ({str_time(actual_start)} - {str_time(actual_end)}, active={str_delta(active)})"
-        )
-        return start_max, start_max + active
-    # worked enough but started late, so shift start to the left ;)
-    elif actual_start > start_max:
-        return start_max, start_max + active
-    else:
-        logger.error(
-            f"missed a case ({str_time(actual_start)} - {str_time(actual_end)}, active={str_delta(active)})"
-        )
-        return end_min - active, end_min
 
 
 def issue_to_string(i: pd.DataFrame):
@@ -312,28 +257,18 @@ while date < DATE_TO:
     logger.debug(
         f"not-afk: {active}, with pauses < {short_pause.seconds}s: {active_incl_short_pauses}"
     )
-    # consider lunch break (a must when time >= 6h)
-    working_hours = active_incl_short_pauses
-    working_hours_incl_lunch = working_hours
-    if active_incl_short_pauses >= timedelta(hours=6):
-        logger.debug(f"add 30min break")
-        working_hours_incl_lunch += timedelta(minutes=30)
-    # round to 15min
-    working_hours = round_timedelta(working_hours)
-    working_hours_incl_lunch = round_timedelta(working_hours_incl_lunch)
 
-    # start and end of day
-    start = round_datetime(afk.iloc[0].timestamp)
-    end = round_datetime(
-        afk.iloc[-1].timestamp + timedelta(seconds=afk.iloc[-1].duration)
+    wh = WorkingHours(
+        afk.iloc[0].timestamp,
+        afk.iloc[-1].timestamp + timedelta(seconds=afk.iloc[-1].duration),
+        active_incl_short_pauses,
     )
-    come, go = come_and_go(start, end, working_hours_incl_lunch)
 
     print(
-        f"{str_date(start)} {start.strftime('%a'):^6}"
-        + f" | {str_delta(working_hours)}"
-        + f" | {str_time(come)} - {str_time(go)}"
-        + f"{' (incl. lunch)' if working_hours_incl_lunch > working_hours else ''}"
+        f"{str_date(wh.start)} {wh.start.strftime('%a'):^6}"
+        + f" | {str_delta(wh.hours)}"
+        + f" | {str_time(wh.start)} - {str_time(wh.end)}"
+        + f"{' (incl. lunch)' if wh.lunch_incl else ''}"
     )
 
     if args.time_only:
