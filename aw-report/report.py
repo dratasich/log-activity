@@ -22,6 +22,7 @@ from models.working_hours import WorkingHours
 from reader.activitywatch import (ActivityWatchGitReader, ActivityWatchReader,
                                   ActivityWatchWebReader)
 from reader.m365calendar import M365CalendarReader
+from writer.working_time import WorkingTimeWriter
 from utils import *
 
 # %% Settings
@@ -183,14 +184,8 @@ afk[["start", "end"]] = afk.apply(
     result_type="expand",
     axis=1,
 )
-afk = afk[["active", "lunch_incl", "start", "end"]]
-afk.columns = [g[0] for g in afk.columns]
-# format output for csv
-afk.index = afk.index.strftime("%Y-%m-%d")
-afk["start"] = afk["start"].apply(lambda r: WorkingHours.str_time(r))
-afk["end"] = afk["end"].apply(lambda r: WorkingHours.str_time(r))
-afk["active"] = afk["active"].apply(lambda r: WorkingHours.str_delta(r))
-afk.to_csv("working_time.csv")
+wt = WorkingTimeWriter(afk)
+wt.save()
 
 # activities per date and project
 activities = Activities()
