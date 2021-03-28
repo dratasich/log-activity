@@ -13,11 +13,14 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+import pytz
 from aw_client import ActivityWatchClient
 from dateutil.tz import tzlocal
 
 from models.activities import Activities
 from models.working_hours import WorkingHours
+from reader.activitywatch import (ActivityWatchGitReader, ActivityWatchReader,
+                                  ActivityWatchWebReader)
 from reader.m365calendar import M365CalendarReader
 from utils import *
 
@@ -25,8 +28,9 @@ from utils import *
 BUCKET_AFK = f"aw-watcher-afk_{socket.gethostname()}"
 BUCKET_EDITOR = f"aw-watcher-editor_{socket.gethostname()}"
 BUCKET_GIT = f"aw-git-hooks_{socket.gethostname()}"
-DATE_FROM = datetime.today().replace(day=1, hour=4, minute=0, second=0, microsecond=0)
-DATE_TO = datetime.now()
+vienna = pytz.timezone("Europe/Vienna")
+DATE_FROM = vienna.localize(datetime.today().replace(day=1, hour=4, minute=0, second=0, microsecond=0))
+DATE_TO = vienna.localize(datetime.now())
 
 # arguments
 desc = "List activities per date."
@@ -43,9 +47,9 @@ parser.add_argument(
     "--from",
     dest="date",
     default=DATE_FROM,
-    type=lambda d: datetime.strptime(d, "%Y-%m-%d").replace(
+    type=lambda d: vienna.localize(datetime.strptime(d, "%Y-%m-%d").replace(
         hour=4, minute=0, second=0, microsecond=0
-    ),
+    )),
     help=f"""Start date. Defaults to {DATE_FROM} (first day of the current month).""",
 )
 parser.add_argument(
@@ -62,6 +66,7 @@ parser.add_argument(
     default=f"{DATE_FROM.strftime('%Y-%m')}_m365calendar.json",
 )
 args = parser.parse_args()
+DATE_RANGE = (args.date, DATE_TO)
 
 logging.basicConfig(format="[%(levelname)-5s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -115,12 +120,32 @@ def issue_to_string(i: pd.DataFrame):
         return f"{issue} ({summary})"
 
 
+# %% Get events
+client = ActivityWatchClient("report-client")
+# active time in front of the PC (afk..away-from-keyboard)
+logger.debug(f"aw: get afk events")
+afk_all = ActivityWatchReader(client)
+afk_all.get([BUCKET_AFK], [DATE_RANGE], rename={"data": "afk"})
+# events from editors
+# on window change the event ends, as expected, i.e. events show active time (per file)
+# https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.append.html
+logger.debug(f"aw: get editor events")
+edits_all = ActivityWatchReader(client)
+edits_all.get([BUCKET_EDITOR.replace("editor", e) for e in ast.literal_eval(config["buckets"]["editors"])],
+              [DATE_RANGE], rename={"data": "editor"})
+logger.debug(f"aw: get git events")
+git_all = ActivityWatchGitReader(client)
+git_all.get([BUCKET_GIT], [DATE_RANGE], rename={"data": "git"})
+logger.debug(f"aw: get web events")
+web_all = ActivityWatchWebReader(client)
+web_all.get([""], [DATE_RANGE], rename={"data": "web"})
+
+# %% Categorize via regexes
 def regexes(config_section: configparser.SectionProxy):
     return {
         category: re.compile(regex, re.IGNORECASE)
         for category, regex in config_section.items()
     }
-
 
 # read and compile regexes from config
 r_editor = regexes(config["project.editors"])
@@ -128,80 +153,10 @@ r_git_repos = regexes(config["project.repos"])
 r_git_issues = regexes(config["project.issues"])
 r_web = regexes(config["project.websites"])
 
-
-# %% Get events
-client = ActivityWatchClient("report-client")
-
-
-def aw_events(bucket: str, time_ranges: List[Tuple[datetime, datetime]], rename={}):
-    query = f"""
-    events = query_bucket('{bucket}');
-    RETURN = sort_by_timestamp(events);
-    """
-    events = client.query(query, time_ranges)[0]
-    df = pd.DataFrame([flatten_json(e, rename) for e in events])
-    if not df.empty:
-        df.timestamp = pd.to_datetime(df.timestamp)
-    return df
-
-
-def aw_web_events(time_ranges: List[Tuple[datetime, datetime]], rename={}):
-    query = f"""
-    afk_events = query_bucket(find_bucket("aw-watcher-afk_"));
-    window_events = query_bucket(find_bucket("aw-watcher-window_"));
-    window_events = filter_period_intersect(window_events, filter_keyvals(afk_events, "status", ["not-afk"]));
-    web_events = query_bucket(find_bucket("aw-watcher-web"));
-    web_events = filter_period_intersect(web_events, filter_keyvals(window_events, "app", ["Firefox", "Chrome"]));
-    merged_events = merge_events_by_keys(web_events, ["app", "title"]);
-    RETURN = sort_by_timestamp(web_events);
-    """
-    events = client.query(query, time_ranges)[0]
-    df = pd.DataFrame([flatten_json(e, rename) for e in events])
-    if not df.empty:
-        df.timestamp = pd.to_datetime(df.timestamp)
-    return df
-
-
-def aw_categorize(
-    df: pd.DataFrame,
-    regexes: Dict[str, re.Pattern],
-    columns,
-    single=False,
-):
-    """Categorizes each event of df given a regex per category."""
-    if len(df) == 0:
-        return df
-
-    def tags(s: str, regexes: Dict[str, re.Pattern]):
-        return [c for c, r in regexes.items() if len(r.findall(s)) > 0]
-
-    def first_match(s: str, regexes: Dict[str, re.Pattern]):
-        for c, r in regexes.items():
-            if len(r.findall(s)) > 0:
-                return c
-        return np.nan
-
-    df_category = df.dropna(subset=columns).apply(
-        lambda row: first_match(" ".join(row[columns]), regexes)
-        if single
-        else tags(" ".join(row[columns]), regexes),
-        axis=1,
-    )
-    if len(df_category) == 0:
-        logger.warning(f"failed to assign a single category given {columns}")
-        df["category"] = np.nan
-    else:
-        df["category"] = df_category
-    df["has_category"] = df.apply(
-        lambda row: not pd.isna(row.category) if single else len(row.category) > 0,
-        axis=1,
-    )
-    logger.debug(f"total: {len(df)}")
-    logger.debug(f"has category: {len(df[df.has_category])}")
-    if len(df[df.has_category]) < len(df):
-        logger.debug(f"missing category, e.g.:\n{df[~df.has_category][0:10]}")
-
-    return df
+logger.debug("aw: categorize editor events")
+edits_all.categorize(r_editor, ["editor_project", "editor_file", "editor_language"], single=True)
+git_all.categorize_issues(r_git_issues, r_git_repos)
+web_all.categorize(r_web, ["web_url", "web_title"], single=True)
 
 
 # load calendar (not synced in aw)
@@ -213,25 +168,11 @@ while date < DATE_TO:
     current_day = (date, date + timedelta(days=1))
     projects = Activities()
 
-    logger.debug(f"get aw events of {current_day}")
-    # active time in front of the PC (afk..away-from-keyboard)
-    afk = aw_events(BUCKET_AFK, [current_day], rename={"data": "afk"})
-    # events from editors
-    # on window change the event ends, as expected, i.e. events show active time (per file)
-    # https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.append.html
-    edits = pd.concat(
-        [
-            aw_events(
-                BUCKET_EDITOR.replace("editor", editor),
-                [current_day],
-                rename={"data": "editor"},
-            )
-            for editor in ast.literal_eval(config["buckets"]["editors"])
-        ],
-        ignore_index=True,
-    )
-    git = aw_events(BUCKET_GIT, [current_day], rename={"data": "git"})
-    web = aw_web_events([current_day], rename={"data": "web"})
+    logger.debug(f"filter aw events of {current_day}")
+    afk = afk_all.events_within(current_day).copy()
+    edits = edits_all.events_within(current_day).copy()
+    git = git_all.events_within(current_day).copy()
+    web = web_all.events_within(current_day).copy()
 
     # step for next day
     date = date + timedelta(days=1)
@@ -276,13 +217,6 @@ while date < DATE_TO:
 
     # project percentage to active time based on editor events
     if len(edits) > 0:
-        logger.debug("Categorize editor events")
-        edits = aw_categorize(
-            edits,
-            r_editor,
-            ["editor_project", "editor_file", "editor_language"],
-            single=True,
-        )
         logger.debug(edits.groupby("category").duration.sum())
         edits.groupby("category").apply(
             lambda g: projects.add(
@@ -309,29 +243,7 @@ while date < DATE_TO:
         if args.commits_sort_by == "timestamp":
             print(git[git.git_hook == "post-commit"])
         elif args.commits_sort_by == "issue":
-            # prepare list of issues
-            commits = git[git.git_hook == "post-commit"].explode("git_issues").reset_index(drop=True)
-            # categorize git commits according to issues or repos
-            giti = aw_categorize(
-                commits.copy(),
-                r_git_issues,
-                columns=["git_issues"],
-                single=True,
-            )
-            gitr = aw_categorize(
-                commits.copy(),
-                r_git_repos,
-                columns=["git_origin"],
-                single=True,
-            )
-            # update NaNs of category column (issue first, then repo)
-            giti.update(gitr)  # !!has_category probably invalidated!!
-            # add description from git to project
-            (
-                giti.astype(str)
-                # .drop_duplicates(["git_origin", "git_commit"])
-                .drop_duplicates(["git_origin", "git_issues", "git_summary"])
-                .groupby(["category"])
+            git.groupby(["category"]) \
                 .apply(
                     lambda g: projects.add(
                         g.iloc[0].category,
@@ -339,16 +251,9 @@ while date < DATE_TO:
                         desc=", ".join(g.groupby("git_issues").apply(lambda i: issue_to_string(i)))
                     )
                 )
-            )
 
     # web visits
     if len(web) > 0:
-        web = aw_categorize(
-            web,
-            r_web,
-            ["web_url", "web_title"],
-            single=True,
-        )
         web.groupby("category").apply(
             lambda g: projects.add(
                 g.iloc[0].category,
