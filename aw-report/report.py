@@ -162,6 +162,13 @@ web_all.categorize(r_web, ["web_url", "web_title"], single=True)
 # load calendar (not synced in aw)
 calendar = M365CalendarReader(args.meetings)
 
+activities = Activities()
+activities.add_df(edits_all.events, {"category": "project", "timestamp": "date", "duration": "time"})
+
+activities.save()
+logging.debug(f"wrote projects to file")
+
+
 date = args.date
 while date < DATE_TO:
     logger.debug(f">>> {date}")
@@ -219,7 +226,7 @@ while date < DATE_TO:
     if len(edits) > 0:
         logger.debug(edits.groupby("category").duration.sum())
         edits.groupby("category").apply(
-            lambda g: projects.add(
+            lambda g: projects.add_item(
                 g.iloc[0].category, current_day[0], timedelta(seconds=g.duration.sum())
             )
         )
@@ -230,7 +237,7 @@ while date < DATE_TO:
     if meetings is not None and len(meetings) > 0:
         # add info to projects
         meetings.groupby("categories").apply(
-            lambda g: projects.add(
+            lambda g: projects.add_item(
                 g.iloc[0].categories,
                 current_day[0],
                 g.duration.sum(),
@@ -245,7 +252,7 @@ while date < DATE_TO:
         elif args.commits_sort_by == "issue":
             git.groupby(["category"]) \
                 .apply(
-                    lambda g: projects.add(
+                    lambda g: projects.add_item(
                         g.iloc[0].category,
                         current_day[0],
                         desc=", ".join(g.groupby("git_issues").apply(lambda i: issue_to_string(i)))
@@ -255,7 +262,7 @@ while date < DATE_TO:
     # web visits
     if len(web) > 0:
         web.groupby("category").apply(
-            lambda g: projects.add(
+            lambda g: projects.add_item(
                 g.iloc[0].category,
                 current_day[0],
                 timedelta(seconds=g.duration.sum()),

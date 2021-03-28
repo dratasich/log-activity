@@ -10,7 +10,13 @@ class Activities():
     def __init__(self):
         self._activities = pd.DataFrame(columns=["project", "date", "time", "desc"]).set_index("project")
 
-    def add(
+    def add_df(self, df: pd.DataFrame, mapping={}):
+        # append
+        self._activities = self._activities.append(df.loc[:, mapping.keys()].rename(columns=mapping)) \
+        # floor timestamps to date
+        self._activities.date = self._activities.date.dt.floor("d")
+
+    def add_item(
             self,
             project: str,
             date: datetime,
@@ -47,3 +53,17 @@ class Activities():
                 "desc": ";".join
             }
         )
+
+    def save(self, filename="activities.csv"):
+        def describe(desc):
+            return ", ".join(desc.dropna())
+
+        # aggregate per date and project
+        a = self._activities.groupby(["date", "project"]) \
+            .agg({
+                "time": sum,
+                "desc": describe,
+            })
+        a["hours"] = a["time"] / 3600
+        print(a)
+        a.to_csv(filename)
