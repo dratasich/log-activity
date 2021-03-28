@@ -27,6 +27,7 @@ class ActivityWatchReader():
             df = pd.DataFrame([flatten_json(e, rename) for e in events])
             if not df.empty:
                 df.timestamp = pd.to_datetime(df.timestamp)
+                df["date"] = df.timestamp.dt.floor("d")
             if self.events is None:
                 self.events = df
             else:
@@ -111,6 +112,7 @@ class ActivityWatchWebReader(ActivityWatchReader):
         df = pd.DataFrame([flatten_json(e, rename) for e in events])
         if not df.empty:
             df.timestamp = pd.to_datetime(df.timestamp)
+        df["date"] = df.timestamp.dt.floor("d")
         self.events = df
 
 

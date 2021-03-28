@@ -126,6 +126,7 @@ client = ActivityWatchClient("report-client")
 logger.debug(f"aw: get afk events")
 afk_all = ActivityWatchReader(client)
 afk_all.get([BUCKET_AFK], [DATE_RANGE], rename={"data": "afk"})
+afk_all.events["afk"] = afk_all.events["afk_status"].apply(lambda s: s == "afk")
 # events from editors
 # on window change the event ends, as expected, i.e. events show active time (per file)
 # https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.append.html
@@ -162,6 +163,15 @@ web_all.categorize(r_web, ["web_url", "web_title"], single=True)
 # load calendar (not synced in aw)
 calendar = M365CalendarReader(args.meetings)
 
+# working time per date
+short_pause = timedelta(minutes=10)
+afk = afk_all.events
+afk = afk[~afk.afk | (afk.duration < short_pause.seconds)] \
+    .groupby("date") \
+    .agg({"duration": sum, "timestamp": [min, max]}) \
+    .copy()
+
+# activities per date and project
 activities = Activities()
 activities.add_df(edits_all.events, {"category": "project", "timestamp": "date", "duration": "time"})
 
@@ -196,9 +206,7 @@ while date < DATE_TO:
         continue
 
     # active time
-    afk["afk"] = afk["afk_status"].apply(lambda s: s == "afk")
     active = timedelta(seconds=afk[~afk.afk].duration.sum())
-    short_pause = timedelta(minutes=5)
     active_incl_short_pauses = timedelta(
         seconds=afk[~afk.afk | (afk.duration < short_pause.seconds)].duration.sum()
     )
