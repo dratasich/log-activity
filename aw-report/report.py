@@ -168,8 +168,29 @@ short_pause = timedelta(minutes=10)
 afk = afk_all.events
 afk = afk[~afk.afk | (afk.duration < short_pause.seconds)] \
     .groupby("date") \
-    .agg({"duration": sum, "timestamp": [min, max]}) \
-    .copy()
+    .agg({"duration": sum, "timestamp": [min, max]})
+# align working hours
+afk[["active", "lunch_incl"]] = afk.apply(
+    lambda r: WorkingHours.align_hours(timedelta(seconds=r["duration", "sum"])),
+    result_type="expand",
+    axis=1,
+)
+afk[["start", "end"]] = afk.apply(
+    lambda r: WorkingHours.align_range(
+        r["timestamp", "min"].to_pydatetime(),
+        r["timestamp", "max"].to_pydatetime(),
+        r["active", ""].to_pytimedelta()),
+    result_type="expand",
+    axis=1,
+)
+afk = afk[["active", "lunch_incl", "start", "end"]]
+afk.columns = [g[0] for g in afk.columns]
+# format output for csv
+afk.index = afk.index.strftime("%Y-%m-%d")
+afk["start"] = afk["start"].apply(lambda r: WorkingHours.str_time(r))
+afk["end"] = afk["end"].apply(lambda r: WorkingHours.str_time(r))
+afk["active"] = afk["active"].apply(lambda r: WorkingHours.str_delta(r))
+afk.to_csv("working_time.csv")
 
 # activities per date and project
 activities = Activities()

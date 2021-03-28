@@ -29,8 +29,13 @@ class WorkingHours():
         working_hours_incl_lunch = WorkingHours._round_timedelta(working_hours_incl_lunch)
         return working_hours_incl_lunch, lunch_incl
 
-    def align_range(actual_start: datetime, actual_end: datetime, active: timedelta):
+    def align_range(actual_start: datetime, actual_end: datetime, active: timedelta, round=True):
         """Converts start and end of today to something that is allowed and reflects active time."""
+        # round
+        if round:
+            actual_start = WorkingHours._round_datetime(actual_start)
+            actual_end = WorkingHours._round_datetime(actual_end)
+
         weekday = actual_start.isoweekday()
         # ignore Kernzeit on weekends
         if weekday == 6 or weekday == 7:
@@ -66,12 +71,21 @@ class WorkingHours():
         )
         return tm_rounded
 
-    def _str_time(date: datetime):
+    def _round_datetime(tm: datetime, round_to_min=15):
+        tm_rounded = tm + timedelta(minutes=float(round_to_min)/2)
+        tm_rounded -= timedelta(
+            minutes=tm_rounded.minute % round_to_min,
+            seconds=tm_rounded.second,
+            microseconds=tm_rounded.microsecond,
+        )
+        return tm_rounded
+
+    def str_time(date: datetime):
         if date is None:
             return "00:00"
         return date.astimezone(tz=tzlocal()).strftime("%H:%M")
 
-    def _str_delta(time: timedelta):
+    def str_delta(time: timedelta):
         h = int(time.total_seconds() / 3600)
         m = int((time.total_seconds() % 3600) / 60)
         return f"{h:02}:{m:02}"
