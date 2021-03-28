@@ -8,7 +8,7 @@ import pandas as pd
 class Activities():
 
     def __init__(self):
-        self._activities = pd.DataFrame(columns=["project", "date", "time", "desc", "category"]).set_index("project")
+        self._activities = pd.DataFrame(columns=["project", "date", "time", "desc"]).set_index("project")
 
     def add(
             self,
@@ -16,7 +16,6 @@ class Activities():
             date: datetime,
             time: timedelta = timedelta(seconds=0),
             desc: str = "",
-            category: str = "",
     ):
         self._activities = self._activities.append(
             {
@@ -24,7 +23,6 @@ class Activities():
                 "date": date,
                 "time": time,
                 "desc": desc,
-                "category": category,
             },
             ignore_index=True,
         )
