@@ -13,25 +13,23 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-import pytz
-from aw_client import ActivityWatchClient
 from dateutil.tz import tzlocal
 
+from aw_client import ActivityWatchClient
 from models.activities import Activities
 from models.working_hours import WorkingHours
 from reader.activitywatch import (ActivityWatchGitReader, ActivityWatchReader,
                                   ActivityWatchWebReader)
 from reader.m365calendar import M365CalendarReader
-from writer.working_time import WorkingTimeWriter
 from utils import *
+from writer.working_time import WorkingTimeWriter
 
 # %% Settings
 BUCKET_AFK = f"aw-watcher-afk_{socket.gethostname()}"
 BUCKET_EDITOR = f"aw-watcher-editor_{socket.gethostname()}"
 BUCKET_GIT = f"aw-git-hooks_{socket.gethostname()}"
-vienna = pytz.timezone("Europe/Vienna")
-DATE_FROM = vienna.localize(datetime.today().replace(day=1, hour=4, minute=0, second=0, microsecond=0))
-DATE_TO = vienna.localize(datetime.now())
+DATE_FROM = datetime.today().astimezone(tz=tzlocal()).replace(day=1, hour=4, minute=0, second=0, microsecond=0)
+DATE_TO = datetime.now().astimezone(tz=tzlocal())
 
 # arguments
 desc = "List activities per date."
@@ -48,9 +46,9 @@ parser.add_argument(
     "--from",
     dest="date",
     default=DATE_FROM,
-    type=lambda d: vienna.localize(datetime.strptime(d, "%Y-%m-%d").replace(
+    type=lambda d: datetime.strptime(d, "%Y-%m-%d").replace(
         hour=4, minute=0, second=0, microsecond=0
-    )),
+    ).astimezone(tz=tzlocal()),
     help=f"""Start date. Defaults to {DATE_FROM} (first day of the current month).""",
 )
 parser.add_argument(
@@ -189,13 +187,15 @@ wt.save()
 
 # activities per date and project
 activities = Activities()
-activities.add_df(edits_all.events, {"category": "project", "timestamp": "date", "duration": "time", "editor_project": "desc"})
-activities.add_df(git_all.events, {"category": "project", "timestamp": "date", "duration": "time", "git_summary": "desc"})
-activities.add_df(web_all.events, {"category": "project", "timestamp": "date", "duration": "time", "web_title": "desc"})
+activities.add_df(edits_all.events, {"category": "project", "date": "date", "time": "time", "editor_project": "desc"})
+activities.add_df(git_all.events, {"category": "project", "date": "date", "time": "time", "git_summary": "desc"})
+activities.add_df(web_all.events, {"category": "project", "date": "date", "time": "time", "web_title": "desc"})
+activities.add_df(calendar.events_within(DATE_RANGE), {"subject": "desc", "date": "date", "categories": "project", "duration": "time"})
 
 activities.save()
 logging.debug(f"wrote projects to file")
 
+raise RuntimeError("abort")
 
 date = args.date
 while date < DATE_TO:

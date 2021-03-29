@@ -25,13 +25,20 @@ class ActivityWatchReader():
             """
             events = self._client.query(query, time_ranges)[0]
             df = pd.DataFrame([flatten_json(e, rename) for e in events])
-            if not df.empty:
-                df.timestamp = pd.to_datetime(df.timestamp)
-                df["date"] = df.timestamp.dt.floor("d")
             if self.events is None:
                 self.events = df
             else:
                 self.events.append(df)
+        # transform for some extra columns for convenience
+        self._map()
+
+    def _map(self):
+        # change python timestamp to pandas timestamp
+        self.events.loc[:, "timestamp"] = pd.to_datetime(self.events.timestamp)
+        # add date column from exact timestamp (= starting point of activity)
+        self.events.loc[:, "date"] = self.events.timestamp.dt.floor("d")
+        # add time = duration as timedelta
+        self.events.loc[:, "time"] = self.events.duration.apply(lambda d: timedelta(seconds=d))
 
     def categorize(
             self,
@@ -108,10 +115,8 @@ class ActivityWatchWebReader(ActivityWatchReader):
         """
         events = self._client.query(query, time_ranges)[0]
         df = pd.DataFrame([flatten_json(e, rename) for e in events])
-        if not df.empty:
-            df.timestamp = pd.to_datetime(df.timestamp)
-        df["date"] = df.timestamp.dt.floor("d")
         self.events = df
+        self._map()
 
 
 class ActivityWatchGitReader(ActivityWatchReader):
@@ -125,6 +130,11 @@ class ActivityWatchGitReader(ActivityWatchReader):
             return
 
         commits = self.events[self.events.git_hook == "post-commit"].explode("git_issues").reset_index(drop=True)
+
+        # abort if no post-commits
+        if len(commits) == 0:
+            return
+
         # categorize git commits according to issues or repos
         giti = self._categorize(
             commits.copy(),

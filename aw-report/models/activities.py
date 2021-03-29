@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 from typing import Dict, Tuple
 
 import pandas as pd
-from models.working_hours import WorkingHours
 
 
 class Activities():
@@ -14,8 +13,6 @@ class Activities():
     def add_df(self, df: pd.DataFrame, mapping={}):
         # append
         self._activities = self._activities.append(df.loc[:, mapping.keys()].rename(columns=mapping)) \
-        # floor timestamps to date
-        self._activities.date = self._activities.date.dt.floor("d")
 
     def add_item(
             self,
@@ -65,8 +62,18 @@ class Activities():
                 "time": sum,
                 "desc": describe,
             })
-        a["hours"] = a["time"].apply(lambda t:
-            WorkingHours.str_delta(WorkingHours.round_timedelta(timedelta(seconds=t)))
-        )
+        a.reset_index(inplace=True)
+
+        # extra
+        a["hours"] = a["time"].apply(lambda t: t.seconds / 3600)
+
+        # format
+        a["date"] = a["date"].apply(lambda r: r.to_pydatetime().strftime("%Y-%m-%d"))
+        a["time"] = a["time"].apply(lambda r: Activities.__str_delta(r.to_pytimedelta()))
         print(a)
         a.to_csv(filename)
+
+    def __str_delta(time: timedelta):
+        h = int(time.total_seconds() / 3600)
+        m = int((time.total_seconds() % 3600) / 60)
+        return f"{h:02}:{m:02}"

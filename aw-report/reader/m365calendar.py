@@ -8,7 +8,7 @@ class M365CalendarReader():
 
     def __init__(self, filename: str):
         self._logger = logging.getLogger(__name__)
-        self._calendar = self.__read(filename)
+        self.events = self.__read(filename)
 
     def __read(self, filename: str):
         # load calendar
@@ -31,7 +31,7 @@ class M365CalendarReader():
         calendar = calendar[calendar["categories"] != "privat"]
         # calculate event duration
         calendar = calendar.astype(
-            {"startWithTimeZone": "datetime64", "endWithTimeZone": "datetime64"}
+            {"startWithTimeZone": "datetime64[ns, Europe/Vienna]", "endWithTimeZone": "datetime64[ns, Europe/Vienna]"}
         )
         calendar["duration"] = calendar["endWithTimeZone"] - calendar["startWithTimeZone"]
         # add date column for grouping per day
@@ -40,9 +40,17 @@ class M365CalendarReader():
 
     def events_from(self, date):
         # meetings
-        if self._calendar is None:
+        if self.events is None:
             return
         try:
-            return self._calendar[self._calendar.date == pd.to_datetime(date).floor("d")]
+            return self.events[self.events.date == pd.to_datetime(date).floor("d")]
         except KeyError as e:
             logger.debug(f"no events on this day")
+
+    def events_within(self, date):
+        # meetings
+        if self.events is None:
+            return
+        else:
+            return self.events[(self.events.date >= pd.to_datetime(date[0]).floor("d"))
+                               & (self.events.date <= pd.to_datetime(date[1]).floor("d"))]
