@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Tuple
 
 import pandas as pd
+from models.working_hours import WorkingHours
 
 
 class Activities():
@@ -56,7 +57,7 @@ class Activities():
 
     def save(self, filename="activities.csv"):
         def describe(desc):
-            return ", ".join(desc.dropna())
+            return ", ".join(desc.dropna().drop_duplicates())
 
         # aggregate per date and project
         a = self._activities.groupby(["date", "project"]) \
@@ -64,6 +65,8 @@ class Activities():
                 "time": sum,
                 "desc": describe,
             })
-        a["hours"] = a["time"] / 3600
+        a["hours"] = a["time"].apply(lambda t:
+            WorkingHours.str_delta(WorkingHours.round_timedelta(timedelta(seconds=t)))
+        )
         print(a)
         a.to_csv(filename)

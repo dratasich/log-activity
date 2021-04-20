@@ -26,15 +26,15 @@ class WorkingHours():
             lunch_incl = True
             working_hours_incl_lunch += timedelta(minutes=30)
         # round to 15min
-        working_hours_incl_lunch = WorkingHours._round_timedelta(working_hours_incl_lunch)
+        working_hours_incl_lunch = WorkingHours.round_timedelta(working_hours_incl_lunch)
         return working_hours_incl_lunch, lunch_incl
 
     def align_range(actual_start: datetime, actual_end: datetime, active: timedelta, round=True):
         """Converts start and end of today to something that is allowed and reflects active time."""
         # round
         if round:
-            actual_start = WorkingHours._round_datetime(actual_start)
-            actual_end = WorkingHours._round_datetime(actual_end)
+            actual_start = WorkingHours.round_datetime(actual_start)
+            actual_end = WorkingHours.round_datetime(actual_end)
 
         weekday = actual_start.isoweekday()
         # ignore Kernzeit on weekends
@@ -65,13 +65,13 @@ class WorkingHours():
         else:
             return end_min - active, end_min
 
-    def _round_timedelta(tm: timedelta, round_to_s=timedelta(minutes=15).total_seconds()):
+    def round_timedelta(tm: timedelta, round_to_s=timedelta(minutes=15).total_seconds()):
         tm_rounded = timedelta(
             seconds=int((tm.total_seconds() + round_to_s / 2) / (round_to_s)) * (round_to_s)
         )
         return tm_rounded
 
-    def _round_datetime(tm: datetime, round_to_min=15):
+    def round_datetime(tm: datetime, round_to_min=15):
         tm_rounded = tm + timedelta(minutes=float(round_to_min)/2)
         tm_rounded -= timedelta(
             minutes=tm_rounded.minute % round_to_min,

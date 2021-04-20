@@ -189,7 +189,7 @@ wt.save()
 
 # activities per date and project
 activities = Activities()
-activities.add_df(edits_all.events, {"category": "project", "timestamp": "date", "duration": "time"})
+activities.add_df(edits_all.events, {"category": "project", "timestamp": "date", "duration": "time", "editor_project": "desc"})
 
 activities.save()
 logging.debug(f"wrote projects to file")
