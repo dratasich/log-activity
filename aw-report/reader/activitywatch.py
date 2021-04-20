@@ -100,9 +100,7 @@ class ActivityWatchWebReader(ActivityWatchReader):
 
     def get(self, bucket: str, time_ranges: List[Tuple[datetime, datetime]], rename={}):
         query = f"""
-        afk_events = query_bucket(find_bucket("aw-watcher-afk_"));
         window_events = query_bucket(find_bucket("aw-watcher-window_"));
-        window_events = filter_period_intersect(window_events, filter_keyvals(afk_events, "status", ["not-afk"]));
         web_events = query_bucket(find_bucket("aw-watcher-web"));
         web_events = filter_period_intersect(web_events, filter_keyvals(window_events, "app", ["Firefox", "Chrome"]));
         merged_events = merge_events_by_keys(web_events, ["app", "title"]);
