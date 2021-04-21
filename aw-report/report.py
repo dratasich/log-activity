@@ -62,7 +62,6 @@ parser.add_argument(
     "-m",
     "--meetings",
     type=str,
-    default=f"{DATE_FROM.strftime('%Y-%m')}_m365calendar.json",
 )
 args = parser.parse_args()
 DATE_RANGE = (args.date, DATE_TO)
@@ -160,7 +159,8 @@ web_all.categorize(r_web, ["web_url", "web_title"], single=True)
 
 
 # load calendar (not synced in aw)
-calendar = M365CalendarReader(args.meetings)
+if args.meetings is not None:
+    calendar = M365CalendarReader(args.meetings)
 
 # working time per date
 short_pause = timedelta(minutes=10)
@@ -190,12 +190,13 @@ activities = Activities()
 activities.add_df(edits_all.events, {"category": "project", "date": "date", "time": "time", "editor_project": "desc"})
 activities.add_df(git_all.events, {"category": "project", "date": "date", "time": "time", "git_summary": "desc"})
 activities.add_df(web_all.events, {"category": "project", "date": "date", "time": "time", "web_title": "desc"})
-activities.add_df(calendar.events_within(DATE_RANGE), {"subject": "desc", "date": "date", "categories": "project", "duration": "time"})
+if args.meetings is not None:
+    activities.add_df(calendar.events_within(DATE_RANGE), {"subject": "desc", "date": "date", "categories": "project", "duration": "time"})
 
 activities.save()
 logging.debug(f"wrote projects to file")
 
-raise RuntimeError("abort")
+#raise RuntimeError("abort")
 
 date = args.date
 while date < DATE_TO:
@@ -259,17 +260,18 @@ while date < DATE_TO:
         logger.debug(f"project considering editors:\n{projects}")
 
     # meetings
-    meetings = calendar.events_from(current_day[0])
-    if meetings is not None and len(meetings) > 0:
-        # add info to projects
-        meetings.groupby("categories").apply(
-            lambda g: projects.add_item(
-                g.iloc[0].categories,
-                current_day[0],
-                g.duration.sum(),
-                "meetings: " + ", ".join(g.subject.to_list()),
+    if args.meetings is not None:
+        meetings = calendar.events_from(current_day[0])
+        if meetings is not None and len(meetings) > 0:
+            # add info to projects
+            meetings.groupby("categories").apply(
+                lambda g: projects.add_item(
+                    g.iloc[0].categories,
+                    current_day[0],
+                    g.duration.sum(),
+                    "meetings: " + ", ".join(g.subject.to_list()),
+                )
             )
-        )
 
     # git commits
     if len(git) > 0:

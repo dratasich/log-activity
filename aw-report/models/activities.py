@@ -53,6 +53,9 @@ class Activities():
         )
 
     def save(self, filename="activities.csv"):
+        if len(self._activities) == 0:
+            return
+
         def describe(desc):
             return ", ".join(desc.dropna().drop_duplicates())
 
