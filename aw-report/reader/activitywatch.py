@@ -25,6 +25,9 @@ class ActivityWatchReader():
             """
             events = self._client.query(query, time_ranges)[0]
             df = pd.DataFrame([flatten_json(e, rename) for e in events])
+            # add metadata info
+            df["source"] = bucket
+            df["type"] = "activitywatch"
             if self.events is None:
                 self.events = df
             else:
@@ -115,6 +118,9 @@ class ActivityWatchWebReader(ActivityWatchReader):
         """
         events = self._client.query(query, time_ranges)[0]
         df = pd.DataFrame([flatten_json(e, rename) for e in events])
+        # add metadata info
+        df["source"] = "aw-watcher-web"
+        df["type"] = "activitywatch"
         self.events = df
         self._map()
 

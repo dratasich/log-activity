@@ -8,28 +8,16 @@ import pandas as pd
 class Activities():
 
     def __init__(self):
-        self._activities = pd.DataFrame(columns=["project", "date", "time", "desc"]).set_index("project")
+        self._columns = ["type", "source", "project", "date", "time", "desc"]
+        self._activities = pd.DataFrame(columns=self._columns).set_index("project")
 
     def add_df(self, df: pd.DataFrame, mapping={}):
+        # rename columns
+        df = df.rename(columns=mapping)
+        # filter required columns
+        df = df.loc[:, self._columns]
         # append
-        self._activities = self._activities.append(df.loc[:, mapping.keys()].rename(columns=mapping)) \
-
-    def add_item(
-            self,
-            project: str,
-            date: datetime,
-            time: timedelta = timedelta(seconds=0),
-            desc: str = "",
-    ):
-        self._activities = self._activities.append(
-            {
-                "project": project,
-                "date": date,
-                "time": time,
-                "desc": desc,
-            },
-            ignore_index=True,
-        )
+        self._activities = self._activities.append(df)
 
     def __str__(self):
         return str(self._activities)
@@ -60,7 +48,7 @@ class Activities():
             return ", ".join(desc.dropna().drop_duplicates())
 
         # aggregate per date and project
-        a = self._activities.groupby(["date", "project"]) \
+        a = self._activities.groupby(["date", "project", "source"]) \
             .agg({
                 "time": sum,
                 "desc": describe,
@@ -73,7 +61,6 @@ class Activities():
         # format
         a["date"] = a["date"].apply(lambda r: r.to_pydatetime().strftime("%Y-%m-%d"))
         a["time"] = a["time"].apply(lambda r: Activities.__str_delta(r.to_pytimedelta()))
-        print(a)
         a.to_csv(filename)
 
     def __str_delta(time: timedelta):

@@ -13,7 +13,8 @@ Reads events from buckets per day and prints:
 - [x] git issues and commits (aw-git-hooks events)
   - [x] duplicates of (git-repo, summary) are removed
     (may happen on `git commit ammend or reword`)
-- [ ] time spent in meetings
+- [x] time spent in meetings
+  - [x] read exported calendar (json created via MS Automate/Flow)
   - [ ] window events containing "MS Teams"
   - [ ] meetings watcher reading MS outlook calendars (ical or via selenium)
 - [ ] pomodoro (project, summary)

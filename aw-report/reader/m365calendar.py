@@ -36,6 +36,9 @@ class M365CalendarReader():
         calendar["duration"] = calendar["endWithTimeZone"] - calendar["startWithTimeZone"]
         # add date column for grouping per day
         calendar["date"] = calendar["startWithTimeZone"].dt.floor("d")
+        # add source information
+        calendar["source"] = filename
+        calendar["type"] = "calendar"
         return calendar
 
     def events_from(self, date):
