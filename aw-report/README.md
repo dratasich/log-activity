@@ -22,9 +22,9 @@ Reads events from buckets per day and prints:
 Usage
 -----
 
-Print report by issue:
+Save working time and activities (including meetings) since 2021-05-12 by:
 ```bash
-$ ./report.py -c issue
+$ ./report.py -f 2021-05-12 -m m365_calendar.json
 ```
 
-See `./report.py -h` for more options.
+See `./report.py -h` for usage.
