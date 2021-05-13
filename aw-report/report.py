@@ -5,9 +5,7 @@ import argparse
 import ast
 import configparser
 import logging
-import os.path
 import re
-import socket
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -18,16 +16,16 @@ from dateutil.tz import tzlocal
 from aw_client import ActivityWatchClient
 from models.activities import Activities
 from models.working_hours import WorkingHours
-from reader.activitywatch import (ActivityWatchGitReader, ActivityWatchReader,
+from reader.activitywatch import (ActivityWatchAFKReader,
+                                  ActivityWatchEmacsReader,
+                                  ActivityWatchGitReader,
+                                  ActivityWatchIDEReader,
                                   ActivityWatchWebReader)
 from reader.m365calendar import M365CalendarReader
 from utils import *
 from writer.working_time import WorkingTimeWriter
 
 # %% Settings
-BUCKET_AFK = f"aw-watcher-afk_{socket.gethostname()}"
-BUCKET_EDITOR = f"aw-watcher-editor_{socket.gethostname()}"
-BUCKET_GIT = f"aw-git-hooks_{socket.gethostname()}"
 DATE_FROM = datetime.today().astimezone(tz=tzlocal()).replace(day=1, hour=4, minute=0, second=0, microsecond=0)
 DATE_TO = datetime.now().astimezone(tz=tzlocal())
 
@@ -72,22 +70,21 @@ config.read("config.ini")
 client = ActivityWatchClient("report-client")
 # active time in front of the PC (afk..away-from-keyboard)
 logger.debug(f"aw: get afk events")
-afk_all = ActivityWatchReader(client)
-afk_all.get([BUCKET_AFK], [DATE_RANGE], rename={"data": "afk"})
-afk_all.events["afk"] = afk_all.events["afk_status"].apply(lambda s: s == "afk")
+afk_all = ActivityWatchAFKReader(client)
+afk_all.get([DATE_RANGE])
 # events from editors
 # on window change the event ends, as expected, i.e. events show active time (per file)
-# https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.append.html
 logger.debug(f"aw: get editor events")
-edits_all = ActivityWatchReader(client)
-edits_all.get([BUCKET_EDITOR.replace("editor", e) for e in ast.literal_eval(config["buckets"]["editors"])],
-              [DATE_RANGE], rename={"data": "editor"})
+edits_all = ActivityWatchIDEReader(client)
+edits_all.get([DATE_RANGE])
+emacs_all = ActivityWatchEmacsReader(client)
+emacs_all.get([DATE_RANGE])
 logger.debug(f"aw: get git events")
 git_all = ActivityWatchGitReader(client)
-git_all.get([BUCKET_GIT], [DATE_RANGE], rename={"data": "git"})
+git_all.get([DATE_RANGE])
 logger.debug(f"aw: get web events")
 web_all = ActivityWatchWebReader(client)
-web_all.get([""], [DATE_RANGE], rename={"data": "web"})
+web_all.get([DATE_RANGE])
 
 # %% Categorize via regexes
 def regexes(config_section: configparser.SectionProxy):
@@ -103,7 +100,8 @@ r_git_issues = regexes(config["project.issues"])
 r_web = regexes(config["project.websites"])
 
 logger.debug("aw: categorize events")
-edits_all.categorize(r_editor, ["editor_project", "editor_file", "editor_language"], single=True)
+edits_all.categorize(r_editor, ["editor_title"], single=True)
+emacs_all.categorize(r_editor, ["editor_project", "editor_file", "editor_language"], single=True)
 git_all.categorize_issues(r_git_issues, r_git_repos)
 web_all.categorize(r_web, ["web_url", "web_title"], single=True)
 
@@ -139,7 +137,8 @@ logger.debug(f"wrote working time to file")
 
 # activities per date and project
 activities = Activities()
-activities.add_df(edits_all.events, {"category": "project", "editor_project": "desc"})
+activities.add_df(edits_all.events, {"category": "project", "editor_title": "desc"})
+activities.add_df(emacs_all.events, {"category": "project", "editor_project": "desc"})
 activities.add_df(git_all.events, {"category": "project", "git_summary": "desc"})
 activities.add_df(web_all.events, {"category": "project", "web_title": "desc"})
 if args.meetings is not None:
