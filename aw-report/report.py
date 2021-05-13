@@ -13,28 +13,27 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from aw_client import ActivityWatchClient
 from dateutil.tz import tzlocal
 
+from aw_client import ActivityWatchClient
+from models.activities import Activities
+from models.working_hours import WorkingHours
+from reader.activitywatch import (ActivityWatchGitReader, ActivityWatchReader,
+                                  ActivityWatchWebReader)
+from reader.m365calendar import M365CalendarReader
 from utils import *
+from writer.working_time import WorkingTimeWriter
 
 # %% Settings
 BUCKET_AFK = f"aw-watcher-afk_{socket.gethostname()}"
 BUCKET_EDITOR = f"aw-watcher-editor_{socket.gethostname()}"
 BUCKET_GIT = f"aw-git-hooks_{socket.gethostname()}"
-DATE_FROM = datetime.today().replace(day=1, hour=4, minute=0, second=0, microsecond=0)
-DATE_TO = datetime.now()
+DATE_FROM = datetime.today().astimezone(tz=tzlocal()).replace(day=1, hour=4, minute=0, second=0, microsecond=0)
+DATE_TO = datetime.now().astimezone(tz=tzlocal())
 
 # arguments
 desc = "List activities per date."
 parser = argparse.ArgumentParser(description=desc)
-parser.add_argument(
-    "-c",
-    "--commits-sort-by",
-    choices=["issue", "timestamp"],
-    default="timestamp",
-    help=f"""Print commits either per issue or print all commits ordered by time.""",
-)
 parser.add_argument(
     "-f",
     "--from",
@@ -42,23 +41,19 @@ parser.add_argument(
     default=DATE_FROM,
     type=lambda d: datetime.strptime(d, "%Y-%m-%d").replace(
         hour=4, minute=0, second=0, microsecond=0
-    ),
+    ).astimezone(tz=tzlocal()),
     help=f"""Start date. Defaults to {DATE_FROM} (first day of the current month).""",
 )
 parser.add_argument(
     "-v", "--verbose", action="store_true", help="Verbose logging (debug)."
 )
 parser.add_argument(
-    "-t", "--time-only", action="store_true",
-    help="Print only come and go, and total time per day."
-)
-parser.add_argument(
     "-m",
     "--meetings",
     type=str,
-    default=f"{DATE_FROM.strftime('%Y-%m')}_m365calendar.json",
 )
 args = parser.parse_args()
+DATE_RANGE = (args.date, DATE_TO)
 
 logging.basicConfig(format="[%(levelname)-5s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -73,120 +68,33 @@ config = configparser.ConfigParser()
 config.read("config.ini")
 
 
-# Output
-def project_reset():
-    return pd.DataFrame(columns=["project", "time", "desc"]).set_index("project")
+# %% Get events
+client = ActivityWatchClient("report-client")
+# active time in front of the PC (afk..away-from-keyboard)
+logger.debug(f"aw: get afk events")
+afk_all = ActivityWatchReader(client)
+afk_all.get([BUCKET_AFK], [DATE_RANGE], rename={"data": "afk"})
+afk_all.events["afk"] = afk_all.events["afk_status"].apply(lambda s: s == "afk")
+# events from editors
+# on window change the event ends, as expected, i.e. events show active time (per file)
+# https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.append.html
+logger.debug(f"aw: get editor events")
+edits_all = ActivityWatchReader(client)
+edits_all.get([BUCKET_EDITOR.replace("editor", e) for e in ast.literal_eval(config["buckets"]["editors"])],
+              [DATE_RANGE], rename={"data": "editor"})
+logger.debug(f"aw: get git events")
+git_all = ActivityWatchGitReader(client)
+git_all.get([BUCKET_GIT], [DATE_RANGE], rename={"data": "git"})
+logger.debug(f"aw: get web events")
+web_all = ActivityWatchWebReader(client)
+web_all.get([""], [DATE_RANGE], rename={"data": "web"})
 
-
-def project_add(project: str, time: timedelta = timedelta(seconds=0), desc: str = ""):
-    if project in projects.index:
-        projects.at[project, "time"] = projects.loc[project].time + time
-        projects.at[project, "desc"] = projects.loc[project].desc + " " + str(desc)
-    else:
-        projects.loc[project] = {"time": time, "desc": str(desc)}
-
-
-# %% Helpers
-
-
-def str_date(date: datetime):
-    return date.astimezone(tz=tzlocal()).strftime("%Y-%m-%d")
-
-
-def str_time(date: datetime):
-    if date is None:
-        return "00:00"
-    return date.astimezone(tz=tzlocal()).strftime("%H:%M")
-
-
-def str_delta(time: timedelta):
-    h = int(time.total_seconds() / 3600)
-    m = int((time.total_seconds() % 3600) / 60)
-    return f"{h:02}:{m:02}"
-
-
-def round_timedelta(tm: timedelta, round_to_s=timedelta(minutes=15).total_seconds()):
-    tm_rounded = timedelta(
-        seconds=int((tm.total_seconds() + round_to_s / 2) / (round_to_s)) * (round_to_s)
-    )
-    logger.debug(f"{round_to_s}s-rounded {tm} to {tm_rounded}")
-    return tm_rounded
-
-
-def round_datetime(tm: datetime, round_to_min=15):
-    tm_rounded = tm + timedelta(minutes=float(round_to_min) / 2)
-    tm_rounded -= timedelta(
-        minutes=tm_rounded.minute % round_to_min,
-        seconds=tm_rounded.second,
-        microseconds=tm_rounded.microsecond,
-    )
-    logger.debug(f"{round_to_min}s-rounded {tm} to {tm_rounded}")
-    return tm_rounded
-
-
-def come_and_go(actual_start: datetime, actual_end: datetime, active: timedelta):
-    """Converts start and end of today to something that is allowed and reflects active time."""
-    weekday = actual_start.isoweekday()
-    # ignore Kernzeit on weekends
-    if weekday == 6 or weekday == 7:
-        logger.debug(f"ignore Kernzeit as it is {actual_start.strftime('%A')}")
-        return actual_start, actual_start + active
-    # Kernzeit
-    # Mon-Thu min is 09:00 - 15:00
-    isotoday = actual_start.date().isoformat()
-    start_max, end_min = (
-        datetime.fromisoformat(f"{isotoday}T09:00:00").astimezone(tz=tzlocal()),
-        datetime.fromisoformat(f"{isotoday}T15:00:00").astimezone(tz=tzlocal()),
-    )
-    if weekday == 5:  # Fri min is 09:00 - 12:00
-        end_min = datetime.fromisoformat(f"{isotoday}T12:00:00").astimezone(
-            tz=tzlocal()
-        )
-    # actual timings within Kernzeit?
-    if actual_start <= start_max and actual_start + active >= end_min:
-        return actual_start, actual_start + active
-    # worked enough today?
-    elif active < end_min - start_max:
-        logger.warning(
-            f"Kernzeit-Violation ({str_time(actual_start)} - {str_time(actual_end)}, active={str_delta(active)})"
-        )
-        return start_max, start_max + active
-    # worked enough but started late, so shift start to the left ;)
-    elif actual_start > start_max:
-        return start_max, start_max + active
-    else:
-        logger.error(
-            f"missed a case ({str_time(actual_start)} - {str_time(actual_end)}, active={str_delta(active)})"
-        )
-        return end_min - active, end_min
-
-
-def issue_to_string(i: pd.DataFrame):
-    issue = str(i.iloc[0].git_issues)
-    summary = ""
-    titles = i[["git_origin", "git_summary"]].mask(i.git_summary.eq("None")).dropna()
-    if len(titles) > 0:
-        repos = []
-        titles.groupby("git_origin").apply(
-            lambda o: repos.append(
-                os.path.basename(o.iloc[0].git_origin).split(".")[0]
-                + ": "
-                + ", ".join(o.git_summary)
-            )
-        )
-        summary = "; ".join(repos)
-    if issue == "None" or issue == "nan":
-        return f"{summary}"
-    else:
-        return f"{issue} ({summary})"
-
-
+# %% Categorize via regexes
 def regexes(config_section: configparser.SectionProxy):
     return {
         category: re.compile(regex, re.IGNORECASE)
         for category, regex in config_section.items()
     }
-
 
 # read and compile regexes from config
 r_editor = regexes(config["project.editors"])
@@ -194,280 +102,48 @@ r_git_repos = regexes(config["project.repos"])
 r_git_issues = regexes(config["project.issues"])
 r_web = regexes(config["project.websites"])
 
-
-# %% Get events
-client = ActivityWatchClient("report-client")
-
-
-def aw_events(bucket: str, time_ranges: List[Tuple[datetime, datetime]], rename={}):
-    query = f"""
-    events = query_bucket('{bucket}');
-    RETURN = sort_by_timestamp(events);
-    """
-    events = client.query(query, time_ranges)[0]
-    df = pd.DataFrame([flatten_json(e, rename) for e in events])
-    if not df.empty:
-        df.timestamp = pd.to_datetime(df.timestamp)
-    return df
-
-
-def aw_web_events(time_ranges: List[Tuple[datetime, datetime]], rename={}):
-    query = f"""
-    afk_events = query_bucket(find_bucket("aw-watcher-afk_"));
-    window_events = query_bucket(find_bucket("aw-watcher-window_"));
-    window_events = filter_period_intersect(window_events, filter_keyvals(afk_events, "status", ["not-afk"]));
-    web_events = query_bucket(find_bucket("aw-watcher-web"));
-    web_events = filter_period_intersect(web_events, filter_keyvals(window_events, "app", ["Firefox", "Chrome"]));
-    merged_events = merge_events_by_keys(web_events, ["app", "title"]);
-    RETURN = sort_by_timestamp(web_events);
-    """
-    events = client.query(query, time_ranges)[0]
-    df = pd.DataFrame([flatten_json(e, rename) for e in events])
-    if not df.empty:
-        df.timestamp = pd.to_datetime(df.timestamp)
-    return df
-
-
-def aw_categorize(
-    df: pd.DataFrame,
-    regexes: Dict[str, re.Pattern],
-    columns,
-    single=False,
-):
-    """Categorizes each event of df given a regex per category."""
-    if len(df) == 0:
-        return df
-
-    def tags(s: str, regexes: Dict[str, re.Pattern]):
-        return [c for c, r in regexes.items() if len(r.findall(s)) > 0]
-
-    def first_match(s: str, regexes: Dict[str, re.Pattern]):
-        for c, r in regexes.items():
-            if len(r.findall(s)) > 0:
-                return c
-        return np.nan
-
-    df_category = df.dropna(subset=columns).apply(
-        lambda row: first_match(" ".join(row[columns]), regexes)
-        if single
-        else tags(" ".join(row[columns]), regexes),
-        axis=1,
-    )
-    if len(df_category) == 0:
-        logger.warning(f"failed to assign a single category given {columns}")
-        df["category"] = np.nan
-    else:
-        df["category"] = df_category
-    df["has_category"] = df.apply(
-        lambda row: not pd.isna(row.category) if single else len(row.category) > 0,
-        axis=1,
-    )
-    logger.debug(f"total: {len(df)}")
-    logger.debug(f"has category: {len(df[df.has_category])}")
-    if len(df[df.has_category]) < len(df):
-        logger.debug(f"missing category, e.g.:\n{df[~df.has_category][0:10]}")
-
-    return df
+logger.debug("aw: categorize events")
+edits_all.categorize(r_editor, ["editor_project", "editor_file", "editor_language"], single=True)
+git_all.categorize_issues(r_git_issues, r_git_repos)
+web_all.categorize(r_web, ["web_url", "web_title"], single=True)
 
 
 # load calendar (not synced in aw)
-calendar = pd.read_json(args.meetings, orient="records")
-if len(calendar) > 0:
-    # filter columns
-    calendar = calendar[
-        ["subject", "startWithTimeZone", "endWithTimeZone", "categories"]
-    ]
-    # explode and filter categories (if len(categories) > 1, take only one)
-    calendar = (
-        calendar.explode("categories")
-        .dropna()
-        .drop_duplicates(["subject", "startWithTimeZone", "endWithTimeZone"])
-    )
-    # drop private events
-    calendar = calendar[calendar["categories"] != "privat"]
-    # calculate event duration
-    calendar = calendar.astype(
-        {"startWithTimeZone": "datetime64", "endWithTimeZone": "datetime64"}
-    )
-    calendar["duration"] = calendar["endWithTimeZone"] - calendar["startWithTimeZone"]
-    # add date column for grouping per day
-    calendar["date"] = calendar["startWithTimeZone"].dt.floor("d")
+if args.meetings is not None:
+    logger.debug("calendar: read m365 json")
+    calendar = M365CalendarReader(args.meetings)
 
-date = args.date
-while date < DATE_TO:
-    logger.debug(f">>> {date}")
-    current_day = (date, date + timedelta(days=1))
-    projects = project_reset()
+# working time per date
+short_pause = timedelta(minutes=10)
+afk = afk_all.events
+afk = afk[~afk.afk | (afk.duration < short_pause.seconds)] \
+    .groupby("date") \
+    .agg({"duration": sum, "timestamp": [min, max]})
+# align working hours
+afk[["active", "lunch_incl"]] = afk.apply(
+    lambda r: WorkingHours.align_hours(timedelta(seconds=r["duration", "sum"])),
+    result_type="expand",
+    axis=1,
+)
+afk[["start", "end"]] = afk.apply(
+    lambda r: WorkingHours.align_range(
+        r["timestamp", "min"].to_pydatetime(),
+        r["timestamp", "max"].to_pydatetime(),
+        r["active", ""].to_pytimedelta()),
+    result_type="expand",
+    axis=1,
+)
+wt = WorkingTimeWriter(afk)
+wt.save()
+logger.debug(f"wrote working time to file")
 
-    logger.debug(f"get aw events of {current_day}")
-    # active time in front of the PC (afk..away-from-keyboard)
-    afk = aw_events(BUCKET_AFK, [current_day], rename={"data": "afk"})
-    # events from editors
-    # on window change the event ends, as expected, i.e. events show active time (per file)
-    # https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.append.html
-    edits = pd.concat(
-        [
-            aw_events(
-                BUCKET_EDITOR.replace("editor", editor),
-                [current_day],
-                rename={"data": "editor"},
-            )
-            for editor in ast.literal_eval(config["buckets"]["editors"])
-        ],
-        ignore_index=True,
-    )
-    git = aw_events(BUCKET_GIT, [current_day], rename={"data": "git"})
-    web = aw_web_events([current_day], rename={"data": "web"})
+# activities per date and project
+activities = Activities()
+activities.add_df(edits_all.events, {"category": "project", "editor_project": "desc"})
+activities.add_df(git_all.events, {"category": "project", "git_summary": "desc"})
+activities.add_df(web_all.events, {"category": "project", "web_title": "desc"})
+if args.meetings is not None:
+    activities.add_df(calendar.events_within(DATE_RANGE), {"subject": "desc", "categories": "project", "duration": "time"})
 
-    # step for next day
-    date = date + timedelta(days=1)
-
-    # new week formatting
-    weekday = date.weekday()
-    if weekday == 1:
-        print("{:=^80}".format(f" Week {date.isocalendar()[1]} "))
-    else:
-        print("{:-^80}".format(""))
-
-    if len(afk) == 0:
-        # no events at all on this day
-        continue
-
-    # active time
-    afk["afk"] = afk["afk_status"].apply(lambda s: s == "afk")
-    active = timedelta(seconds=afk[~afk.afk].duration.sum())
-    short_pause = timedelta(minutes=5)
-    active_incl_short_pauses = timedelta(
-        seconds=afk[~afk.afk | (afk.duration < short_pause.seconds)].duration.sum()
-    )
-    logger.debug(
-        f"not-afk: {active}, with pauses < {short_pause.seconds}s: {active_incl_short_pauses}"
-    )
-    # consider lunch break (a must when time >= 6h)
-    working_hours = active_incl_short_pauses
-    working_hours_incl_lunch = working_hours
-    if active_incl_short_pauses >= timedelta(hours=6):
-        logger.debug(f"add 30min break")
-        working_hours_incl_lunch += timedelta(minutes=30)
-    # round to 15min
-    working_hours = round_timedelta(working_hours)
-    working_hours_incl_lunch = round_timedelta(working_hours_incl_lunch)
-
-    # start and end of day
-    start = round_datetime(afk.iloc[0].timestamp)
-    end = round_datetime(
-        afk.iloc[-1].timestamp + timedelta(seconds=afk.iloc[-1].duration)
-    )
-    come, go = come_and_go(start, end, working_hours_incl_lunch)
-
-    print(
-        f"{str_date(start)} {start.strftime('%a'):^6}"
-        + f" | {str_delta(working_hours)}"
-        + f" | {str_time(come)} - {str_time(go)}"
-        + f"{' (incl. lunch)' if working_hours_incl_lunch > working_hours else ''}"
-    )
-
-    if args.time_only:
-        continue
-
-    # project percentage to active time based on editor events
-    if len(edits) > 0:
-        logger.debug("Categorize editor events")
-        edits = aw_categorize(
-            edits,
-            r_editor,
-            ["editor_project", "editor_file", "editor_language"],
-            single=True,
-        )
-        logger.debug(edits.groupby("category").duration.sum())
-        edits.groupby("category").apply(
-            lambda g: project_add(
-                g.iloc[0].category, timedelta(seconds=g.duration.sum())
-            )
-        )
-        logger.debug(f"project considering editors:\n{projects}")
-
-    # meetings
-    try:
-        meetings = calendar[calendar.date == pd.to_datetime(current_day[0]).floor("d")]
-        if len(meetings) > 0:
-            # add info to projects
-            meetings.groupby("categories").apply(
-                lambda g: project_add(
-                    g.iloc[0].categories,
-                    g.duration.sum(),
-                    "meetings: " + ", ".join(g.subject.to_list()),
-                )
-            )
-    except KeyError as e:
-        logger.debug(f"no meetings on this day")
-
-    # git commits
-    if len(git) > 0:
-        if args.commits_sort_by == "timestamp":
-            print(git[git.git_hook == "post-commit"])
-        elif args.commits_sort_by == "issue":
-            # prepare list of issues
-            commits = git[git.git_hook == "post-commit"].explode("git_issues").reset_index(drop=True)
-            # categorize git commits according to issues or repos
-            giti = aw_categorize(
-                commits.copy(),
-                r_git_issues,
-                columns=["git_issues"],
-                single=True,
-            )
-            gitr = aw_categorize(
-                commits.copy(),
-                r_git_repos,
-                columns=["git_origin"],
-                single=True,
-            )
-            # update NaNs of category column (issue first, then repo)
-            giti.update(gitr)  # !!has_category probably invalidated!!
-            # add description from git to project
-            (
-                giti.astype(str)
-                # .drop_duplicates(["git_origin", "git_commit"])
-                .drop_duplicates(["git_origin", "git_issues", "git_summary"])
-                .groupby(["category"])
-                .apply(
-                    lambda g: project_add(
-                        g.iloc[0].category,
-                        desc=", ".join(g.groupby("git_issues").apply(lambda i: issue_to_string(i)))
-                    )
-                )
-            )
-
-    # web visits
-    if len(web) > 0:
-        web = aw_categorize(
-            web,
-            r_web,
-            ["web_url", "web_title"],
-            single=True,
-        )
-        web.groupby("category").apply(
-            lambda g: project_add(
-                g.iloc[0].category,
-                timedelta(seconds=g.duration.sum()),
-                ", ".join(
-                    g[g.duration >= timedelta(minutes=5).total_seconds()]
-                    .sort_values(by="duration")
-                    .tail()
-                    .web_title.drop_duplicates()
-                    .to_list()
-                ),
-            )
-        )
-        logger.debug(f"web:\n{web.groupby('category').duration.sum()}")
-
-    # print time and description per projects
-    projects.time = projects.time.apply(lambda t: round_timedelta(t))
-    project_add(
-        "other",
-        working_hours_rounded
-        - (projects.time.sum() if len(projects) > 0 else timedelta(seconds=0)),
-    )
-    for p in projects.index:
-        info = projects.loc[p]
-        print(f"  {p:<15} | {str_delta(info.time)} | {info.desc}")
+activities.save()
+logger.debug(f"wrote activities to file")
