@@ -71,14 +71,13 @@ class Activities():
                 "desc": "; ".join
             }
         )
-        self._activities = a.reset_index()
-        return a
+        self.activities = a.reset_index()
 
     def save(self, filename="activities.csv"):
-        if len(self._activities) == 0:
+        if len(self.activities) == 0:
             return
 
-        a = self._activities.sort_values(["date", "project", "duration"])
+        a = self.activities.sort_values(["date", "project", "duration"])
 
         # format time columns
         a["duration"] = a["duration"].apply(lambda t: Activities.__str_delta(t.to_pytimedelta()))

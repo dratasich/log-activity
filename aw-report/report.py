@@ -143,5 +143,7 @@ if args.meetings is not None:
     activities = Activities(calendar.events_within(DATE_RANGE), git_all.events)
 else:
     activities = Activities(git=git_all.events)
+# replace project with custom project names
+activities.activities.loc[:, "project"] = activities.activities.project.apply(lambda p: config["project.names"][p])
 activities.save()
 logger.debug(f"wrote activities to file")
