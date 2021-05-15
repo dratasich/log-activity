@@ -50,7 +50,6 @@ class WorkingTimeWriter:
 
     def save(self):
         # format output for csv
-        self.logs.index = self.logs.index.strftime("%Y-%m-%d")
         self.logs["start"] = self.logs["start"].apply(lambda r: WorkingHours.str_time(r))
         self.logs["end"] = self.logs["end"].apply(lambda r: WorkingHours.str_time(r))
         self.logs["active"] = self.logs["active"].apply(lambda r: WorkingHours.str_delta(r))

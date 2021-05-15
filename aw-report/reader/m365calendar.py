@@ -35,25 +35,16 @@ class M365CalendarReader():
         )
         calendar["duration"] = calendar["endWithTimeZone"] - calendar["startWithTimeZone"]
         # add date column for grouping per day
-        calendar["date"] = calendar["startWithTimeZone"].dt.floor("d")
+        calendar["date"] = calendar["startWithTimeZone"].dt.date
         # add source information
         calendar["source"] = filename
         calendar["type"] = "calendar"
         return calendar
-
-    def events_from(self, date):
-        # meetings
-        if self.events is None:
-            return
-        try:
-            return self.events[self.events.date == pd.to_datetime(date).floor("d")]
-        except KeyError as e:
-            logger.debug(f"no events on this day")
 
     def events_within(self, date):
         # meetings
         if self.events is None:
             return
         else:
-            return self.events[(self.events.date >= pd.to_datetime(date[0]).floor("d"))
-                               & (self.events.date <= pd.to_datetime(date[1]).floor("d"))]
+            return self.events[(self.events.startWithTimeZone >= date[0])
+                               & (self.events.startWithTimeZone <= date[1])]

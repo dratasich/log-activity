@@ -14,7 +14,6 @@ import pandas as pd
 from dateutil.tz import tzlocal
 
 from aw_client import ActivityWatchClient
-from models.activities import Activities
 from models.working_hours import WorkingHours
 from reader.activitywatch import (ActivityWatchAFKReader,
                                   ActivityWatchEmacsReader,
@@ -23,6 +22,7 @@ from reader.activitywatch import (ActivityWatchAFKReader,
                                   ActivityWatchWebReader)
 from reader.m365calendar import M365CalendarReader
 from utils import *
+from writer.activities import Activities
 from writer.working_time import WorkingTimeWriter
 
 # %% Settings
@@ -110,6 +110,9 @@ web_all.categorize(r_web, ["web_url", "web_title"], single=True)
 if args.meetings is not None:
     logger.debug("calendar: read m365 json")
     calendar = M365CalendarReader(args.meetings)
+    # map calendar category to project
+    c2p = {c: p for p, c in config["project.calendar"].items()}
+    calendar.events["project"] = calendar.events["categories"].apply(lambda c: c2p[c])
 
 # working time per date
 short_pause = timedelta(minutes=10)
@@ -136,13 +139,9 @@ wt.save()
 logger.debug(f"wrote working time to file")
 
 # activities per date and project
-activities = Activities()
-activities.add_df(edits_all.events, {"category": "project", "editor_title": "desc"})
-activities.add_df(emacs_all.events, {"category": "project", "editor_project": "desc"})
-activities.add_df(git_all.events, {"category": "project", "git_summary": "desc"})
-activities.add_df(web_all.events, {"category": "project", "web_title": "desc"})
 if args.meetings is not None:
-    activities.add_df(calendar.events_within(DATE_RANGE), {"subject": "desc", "categories": "project", "duration": "time"})
-
+    activities = Activities(calendar.events_within(DATE_RANGE), git_all.events)
+else:
+    activities = Activities(git=git_all.events)
 activities.save()
 logger.debug(f"wrote activities to file")

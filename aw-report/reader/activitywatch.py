@@ -40,7 +40,7 @@ class ActivityWatchReader():
         # change python timestamp to pandas timestamp
         self.events.loc[:, "timestamp"] = pd.to_datetime(self.events.timestamp)
         # add date column from exact timestamp (= starting point of activity)
-        self.events.loc[:, "date"] = self.events.timestamp.dt.floor("d")
+        self.events.loc[:, "date"] = self.events.timestamp.dt.date
         # add time = duration as timedelta
         self.events.loc[:, "time"] = self.events.duration.apply(lambda d: timedelta(seconds=d))
 
