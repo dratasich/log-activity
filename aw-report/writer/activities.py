@@ -79,7 +79,11 @@ class Activities():
 
         a = self.activities.sort_values(["date", "project", "duration"])
 
+        # round time to 15min
+        a["duration"] = a["duration"].apply(lambda t: t.round("15min"))
+
         # format time columns
+        a["hours"] = a["duration"].apply(lambda t: t.total_seconds()/3600)
         a["duration"] = a["duration"].apply(lambda t: Activities.__str_delta(t.to_pytimedelta()))
 
         a.to_csv(filename, index=False)
