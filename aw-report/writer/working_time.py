@@ -38,6 +38,16 @@ class WorkingTimeWriter:
         if weekday <= 5 and (row["start"] > start_max or row["end"] < end_min):
             notes.append(f"Kernzeit violation ({start_max.strftime('%H:%M')}-{end_min.strftime('%H:%M')})")
 
+        # rest time
+        start_min, end_max = (
+            datetime.fromisoformat(f"{isotoday}T06:00:00").astimezone(tz=tzlocal()),
+            datetime.fromisoformat(f"{isotoday}T19:00:00").astimezone(tz=tzlocal()),
+        )
+        if row["start"] < start_min:
+            notes.append(f"rest time violation (work time >= {start_min.strftime('%H:%M')})")
+        if row["end"] > end_max:
+            notes.append(f"rest time violation (work time <= {end_max.strftime('%H:%M')})")
+
         # logs on weekends
         if (weekday == 6 or weekday == 7) and row["active"].seconds > 0:
             notes.append("logged time on weekend")
