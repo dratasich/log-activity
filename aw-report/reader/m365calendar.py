@@ -19,7 +19,7 @@ class M365CalendarReader():
             return None
         # filter columns
         calendar = calendar[
-            ["subject", "startWithTimeZone", "endWithTimeZone", "categories"]
+            ["subject", "startWithTimeZone", "endWithTimeZone", "categories", "isAllDay", "showAs"]
         ]
         # explode and filter categories (if len(categories) > 1, take only one)
         calendar = (
