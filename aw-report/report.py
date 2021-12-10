@@ -105,6 +105,8 @@ emacs_all.categorize(r_editor, ["editor_project", "editor_file", "editor_languag
 git_all.categorize_issues(r_git_issues, r_git_repos)
 web_all.categorize(r_web, ["web_url", "web_title"], single=True)
 
+# save git commits separately
+git_all.events.to_csv("git.csv")
 
 # load calendar (not synced in aw)
 if args.meetings is not None:
