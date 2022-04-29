@@ -37,6 +37,8 @@ class ActivityWatchReader():
         self._map()
 
     def _map(self):
+        if len(self.events) == 0:
+            return  # nothing to map
         # change python timestamp to pandas timestamp
         self.events.loc[:, "timestamp"] = pd.to_datetime(self.events.timestamp)
         # add date column from exact timestamp (= starting point of activity)

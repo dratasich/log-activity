@@ -82,9 +82,9 @@ emacs_all.get([DATE_RANGE])
 logger.debug(f"aw: get git events")
 git_all = ActivityWatchGitReader(client)
 git_all.get([DATE_RANGE])
-logger.debug(f"aw: get web events")
-web_all = ActivityWatchWebReader(client)
-web_all.get([DATE_RANGE])
+# logger.debug(f"aw: get web events")
+# web_all = ActivityWatchWebReader(client)
+# web_all.get([DATE_RANGE])
 
 # %% Categorize via regexes
 def regexes(config_section: configparser.SectionProxy):
@@ -97,13 +97,13 @@ def regexes(config_section: configparser.SectionProxy):
 r_editor = regexes(config["project.editors"])
 r_git_repos = regexes(config["project.repos"])
 r_git_issues = regexes(config["project.issues"])
-r_web = regexes(config["project.websites"])
+# r_web = regexes(config["project.websites"])
 
 logger.debug("aw: categorize events")
 edits_all.categorize(r_editor, ["editor_title"], single=True)
 emacs_all.categorize(r_editor, ["editor_project", "editor_file", "editor_language"], single=True)
 git_all.categorize_issues(r_git_issues, r_git_repos)
-web_all.categorize(r_web, ["web_url", "web_title"], single=True)
+# web_all.categorize(r_web, ["web_url", "web_title"], single=True)
 
 # save git commits separately
 git_all.events.to_csv("git.csv")
