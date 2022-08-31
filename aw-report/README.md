@@ -14,7 +14,7 @@ Reads events from buckets per day and prints:
   - [x] duplicates of (git-repo, summary) are removed
     (may happen on `git commit ammend or reword`)
 - [x] time spent in meetings
-  - [x] read exported calendar (json created via MS Automate/Flow)
+  - [x] read exported calendar (json fetched via GraphAPI)
   - [ ] window events containing "MS Teams"
   - [ ] meetings watcher reading MS outlook calendars (ical or via selenium)
 - [ ] pomodoro (project, summary)
@@ -28,3 +28,12 @@ $ ./report.py -f 2021-05-12 -m m365_calendar.json
 ```
 
 See `./report.py -h` for usage.
+
+## Export calendar
+
+GraphAPI query:
+```
+# get bearer token from https://developer.microsoft.com/en-us/graph/graph-explorer
+# specify top=200 to get all elements at once (assuming you have less than 200 meetings in a month ;)
+curl -X GET -H 'Authorization: Bearer <token>' --url 'https://graph.microsoft.com/v1.0/me/calendarview?startdatetime=2022-08-01T00:00:00.000Z&enddatetime=2022-09-01T00:00:00.000Z&$orderby=start/dateTime&$select=start,end,categories,subject,isAllDay,showAs&$top=200' | jq '.value' > 2022-08_m365calendar.json
+```

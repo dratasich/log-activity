@@ -17,6 +17,9 @@ class M365CalendarReader():
         except:
             self._logger.warning("failed to read meetings")
             return None
+        # convert datetimes (from GraphAPI)
+        calendar["startWithTimeZone"] = pd.to_datetime(calendar.start.apply(lambda r: r['dateTime']+'Z'))
+        calendar["endWithTimeZone"] = pd.to_datetime(calendar.end.apply(lambda r: r['dateTime']+'Z'))
         # filter columns
         calendar = calendar[
             ["subject", "startWithTimeZone", "endWithTimeZone", "categories", "isAllDay", "showAs"]

@@ -11,9 +11,9 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from aw_client import ActivityWatchClient
 from dateutil.tz import tzlocal
 
-from aw_client import ActivityWatchClient
 from models.working_hours import WorkingHours
 from reader.activitywatch import (ActivityWatchAFKReader,
                                   ActivityWatchEmacsReader,
@@ -114,7 +114,7 @@ if args.meetings is not None:
     calendar = M365CalendarReader(args.meetings)
     # map calendar category to project
     c2p = {c: p for p, c in config["project.calendar"].items()}
-    calendar.events["project"] = calendar.events["categories"].apply(lambda c: c2p[c])
+    calendar.events["project"] = calendar.events["categories"].apply(lambda c: c2p[c] if c in c2p.keys() else c)
 
 # working time per date
 short_pause = timedelta(minutes=10)
