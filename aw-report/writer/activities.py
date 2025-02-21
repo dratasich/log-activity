@@ -1,6 +1,5 @@
 import os.path
 from datetime import datetime, timedelta
-from typing import Dict
 
 import pandas as pd
 
@@ -26,7 +25,7 @@ class Activities:
         # aggregate and map to activities
         self._aggregate()
 
-    def fill(self, working_hours: Dict[datetime, float]):
+    def fill(self, working_hours: dict[datetime, float]):
         raise RuntimeError("not yet implemented")
 
     def _aggregate(self):

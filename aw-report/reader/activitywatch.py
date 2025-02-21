@@ -8,7 +8,6 @@ Query ActivityWatch events.
 import logging
 import re
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -25,7 +24,7 @@ class ActivityWatchReader:
     def get(
         self,
         query,
-        time_ranges: List[Tuple[datetime, datetime]],
+        time_ranges: list[tuple[datetime, datetime]],
         rename={},
         metadata={},
     ):
@@ -54,7 +53,7 @@ class ActivityWatchReader:
 
     def categorize(
         self,
-        regexes: Dict[str, re.Pattern],
+        regexes: dict[str, re.Pattern],
         columns,
         single=False,
     ):
@@ -65,7 +64,7 @@ class ActivityWatchReader:
     def _categorize(
         self,
         df,
-        regexes: Dict[str, re.Pattern],
+        regexes: dict[str, re.Pattern],
         columns,
         single=False,
     ):
@@ -73,10 +72,10 @@ class ActivityWatchReader:
         if len(df) == 0:
             return df
 
-        def tags(s: str, regexes: Dict[str, re.Pattern]):
+        def tags(s: str, regexes: dict[str, re.Pattern]):
             return [c for c, r in regexes.items() if len(r.findall(s)) > 0]
 
-        def first_match(s: str, regexes: Dict[str, re.Pattern]):
+        def first_match(s: str, regexes: dict[str, re.Pattern]):
             for c, r in regexes.items():
                 if len(r.findall(s)) > 0:
                     return c
@@ -120,7 +119,7 @@ class ActivityWatchReader:
 
 
 class ActivityWatchAFKReader(ActivityWatchReader):
-    def get(self, time_ranges: List[Tuple[datetime, datetime]]):
+    def get(self, time_ranges: list[tuple[datetime, datetime]]):
         query = """
         events = query_bucket(find_bucket("aw-watcher-afk_"));
         RETURN = sort_by_timestamp(events);
@@ -135,7 +134,7 @@ class ActivityWatchAFKReader(ActivityWatchReader):
 
 
 class ActivityWatchEmacsReader(ActivityWatchReader):
-    def get(self, time_ranges: List[Tuple[datetime, datetime]]):
+    def get(self, time_ranges: list[tuple[datetime, datetime]]):
         query = """
         afk_events = query_bucket(find_bucket("aw-watcher-afk_"));
         events = query_bucket(find_bucket("aw-watcher-emacs_"));
@@ -151,7 +150,7 @@ class ActivityWatchEmacsReader(ActivityWatchReader):
 
 
 class ActivityWatchIDEReader(ActivityWatchReader):
-    def get(self, time_ranges: List[Tuple[datetime, datetime]]):
+    def get(self, time_ranges: list[tuple[datetime, datetime]]):
         query = """
         afk_events = query_bucket(find_bucket("aw-watcher-afk_"));
         events = query_bucket(find_bucket("aw-watcher-window_"));
@@ -169,7 +168,7 @@ class ActivityWatchIDEReader(ActivityWatchReader):
 
 
 class ActivityWatchWebReader(ActivityWatchReader):
-    def get(self, time_ranges: List[Tuple[datetime, datetime]]):
+    def get(self, time_ranges: list[tuple[datetime, datetime]]):
         query = """
         window_events = query_bucket(find_bucket("aw-watcher-window_"));
         web_events = query_bucket(find_bucket("aw-watcher-web"));
@@ -186,7 +185,7 @@ class ActivityWatchWebReader(ActivityWatchReader):
 
 
 class ActivityWatchGitReader(ActivityWatchReader):
-    def get(self, time_ranges: List[Tuple[datetime, datetime]]):
+    def get(self, time_ranges: list[tuple[datetime, datetime]]):
         query = """
         events = query_bucket(find_bucket("aw-git-hooks_"));
         RETURN = sort_by_timestamp(events);
@@ -200,8 +199,8 @@ class ActivityWatchGitReader(ActivityWatchReader):
 
     def categorize_issues(
         self,
-        regex_for_issues: Dict[str, re.Pattern],
-        regex_for_repos: Dict[str, re.Pattern],
+        regex_for_issues: dict[str, re.Pattern],
+        regex_for_repos: dict[str, re.Pattern],
     ):
         if len(self.events) == 0:
             return
