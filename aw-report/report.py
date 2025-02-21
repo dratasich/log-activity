@@ -119,7 +119,7 @@ if args.meetings is not None:
     # map calendar category to project
     c2p = {c: p for p, c in config["project.calendar"].items()}
     calendar.events["project"] = calendar.events["categories"].apply(
-        lambda c: c2p[c] if c in c2p.keys() else c
+        lambda c: c2p.get(c, c)
     )
 
 # working time per date

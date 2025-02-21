@@ -7,7 +7,7 @@ def flatten_json(y, map={}):
     out = {}
 
     def rename(name):
-        if name in map.keys():
+        if name in map:
             return map[name]
         return name
 
