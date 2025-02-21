@@ -18,7 +18,6 @@ from reader.activitywatch import (
     ActivityWatchIDEReader,
 )
 from reader.m365calendar import M365CalendarReader
-from utils import *
 from writer.activities import Activities
 from writer.working_time import WorkingTimeWriter
 

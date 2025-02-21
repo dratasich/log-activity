@@ -50,6 +50,6 @@ exclude = [
 # rule selection
 # https://docs.astral.sh/ruff/linter/#rule-selection
 #select = ["E", "F", "UP", "B", "SIM", "I"]
-select = ["E"]
+select = ["E", "F"]
 # https://docs.astral.sh/ruff/rules/
 ignore = ["E203", "E501"]

@@ -13,7 +13,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 from aw_client import ActivityWatchClient
-from utils import *
+from utils import flatten_json
 
 
 class ActivityWatchReader:
