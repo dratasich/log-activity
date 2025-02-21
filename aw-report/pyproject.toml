@@ -1,19 +1,19 @@
-[tool.poetry]
+[project]
 name = "aw-report"
-version = "0.1.0"
 description = "Create monthly time-tracking report given ActivityWatch events."
-authors = ["Denise Ratasich <dratasich@users.noreply.github.com>"]
-license = "MIT"
+authors = [
+    {name = "Denise Ratasich", email = "dratasich@users.noreply.github.com"},
+]
+license = {text = "MIT"}
+requires-python = "<4.0,>=3.10"
+version = "0.1.0"
 
-[tool.poetry.dependencies]
-python = "^3.10"
-aw-client = {git = "https://github.com/ActivityWatch/aw-client"}
-pandas = "^1.4.3"
+dependencies = [
+    "aw-client @ git+https://github.com/ActivityWatch/aw-client",
+    "pandas>=2.2.0,<3.0.0",
+]
 
-[tool.poetry.dev-dependencies]
-ptvsd = "^4.3.2"
-black = {version = "^20.8b1", allow-prereleases = true}
-
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+[dependency-groups]
+dev = [
+    "ruff<1.0.0,>=0.6.1",
+]

@@ -121,7 +121,7 @@ short_pause = timedelta(minutes=10)
 afk = afk_all.events
 afk = afk[~afk.afk | (afk.duration < short_pause.seconds)] \
     .groupby("date") \
-    .agg({"duration": sum, "timestamp": [min, max]})
+    .agg({"duration": ['sum'], "timestamp": ['min', 'max']})
 # align working hours
 afk[["active", "lunch_incl"]] = afk.apply(
     lambda r: WorkingHours.align_hours(timedelta(seconds=r["duration", "sum"])),
@@ -146,6 +146,6 @@ if args.meetings is not None:
 else:
     activities = Activities(git=git_all.events)
 # replace project with custom project names
-activities.activities.loc[:, "project"] = activities.activities.project.apply(lambda p: config["project.names"][p])
+activities.activities.loc[:, "project"] = activities.activities.project.apply(lambda p: config["project.names"].get(p, p))
 activities.save()
 logger.debug(f"wrote activities to file")

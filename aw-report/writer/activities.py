@@ -35,14 +35,14 @@ class Activities():
         if self._meetings.index.size > 0:
             m = self._meetings.groupby(["date", "project"]).agg(
                 {
-                    "duration": sum,
+                    "duration": 'sum',
                     "subject": ", ".join,
                 }
             )
             m = m.reset_index()
             m.loc[:, "desc"] = "meetings: " + m.loc[:, "subject"]
             # add to result table
-            a = a.append(m.loc[:, self._columns])
+            a = pd.concat([a if not a.empty else None, m.loc[:, self._columns]])
 
         # git issues
         if self._git.index.size > 0:
@@ -55,7 +55,7 @@ class Activities():
             # sum up
             g = g.groupby(["date", "category", "git_issues", "git_repo"]).agg(
                 {
-                    "time": sum,
+                    "time": 'sum',
                     "git_summary": ", ".join,
                 }
             )
@@ -63,7 +63,7 @@ class Activities():
             g.loc[:, "git_summary"] = g.loc[:, "git_repo"] + ": " + g.loc[:, "git_summary"]
             g = g.reset_index().groupby(["date", "category", "git_issues"]).agg(
                 {
-                    "time": sum,
+                    "time": 'sum',
                     "git_summary": "; ".join
                 }
             )
@@ -71,11 +71,11 @@ class Activities():
             g.loc[:, "desc"] = g.loc[:, "git_issues"] + " (" + g.loc[:, "git_summary"] + ")"
             g = g.rename(columns={"category": "project", "time": "duration"})
             # add to result table
-            a = a.append(g.loc[:, self._columns])
+            a = pd.concat([a if not a.empty else None, g.loc[:, self._columns]])
         # aggregate all inputs per day and project
         a = a.groupby(["date", "project"]).agg(
             {
-                "duration": sum,
+                "duration": 'sum',
                 "desc": "; ".join
             }
         )

@@ -40,11 +40,11 @@ class ActivityWatchReader():
         if len(self.events) == 0:
             return  # nothing to map
         # change python timestamp to pandas timestamp
-        self.events.loc[:, "timestamp"] = pd.to_datetime(self.events.timestamp)
+        self.events["timestamp"] = pd.to_datetime(self.events.timestamp, format='ISO8601')
         # add date column from exact timestamp (= starting point of activity)
-        self.events.loc[:, "date"] = self.events.timestamp.dt.date
+        self.events["date"] = self.events.timestamp.dt.date
         # add time = duration as timedelta
-        self.events.loc[:, "time"] = self.events.duration.apply(lambda d: timedelta(seconds=d))
+        self.events["time"] = self.events.duration.apply(lambda d: timedelta(seconds=d))
 
     def categorize(
             self,
