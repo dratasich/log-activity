@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 from aw_client import ActivityWatchClient
+
 from utils import flatten_json
 
 
