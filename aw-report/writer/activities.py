@@ -11,30 +11,9 @@ class Activities:
         git: pd.DataFrame | None = None,
     ):
         # input activities
-        # meetings
-        meetings_columns = ["date", "project", "duration", "subject"]
-        if meetings is None:
-            self._meetings = pd.DataFrame(columns=meetings_columns)
-        else:
-            # warn if columns are missing
-            if not all(c in meetings.columns for c in meetings_columns):
-                raise ValueError("meetings columns missing")
+        if meetings is not None:
             self._meetings = meetings
-        # git
-        git_columns = [
-            "date",
-            "project",
-            "git_issues",
-            "git_origin",
-            "git_summary",
-            "time",
-        ]
-        if git is None:
-            self._git = pd.DataFrame(columns=git_columns)
-        else:
-            # warn if columns are missing
-            if not all(c in git.columns for c in git_columns):
-                raise ValueError("git columns missing")
+        if git is not None:
             self._git = git
         # aggregate and map to activities
         self._aggregate()
@@ -49,7 +28,7 @@ class Activities:
         a = pd.DataFrame(columns=self._columns, index=[])
         # aggregate inputs per day and project (adds a desc column)
         # meetings
-        if self._meetings.index.size > 0:
+        if self._meetings is not None and self._meetings.index.size > 0:
             m = self._meetings.groupby(["date", "project"]).agg(
                 {
                     "duration": "sum",
@@ -62,7 +41,7 @@ class Activities:
             a = pd.concat([a if not a.empty else None, m.loc[:, self._columns]])
 
         # git issues
-        if self._git.index.size > 0:
+        if self._git is not None and self._git.index.size > 0:
             g = self._git
             g["git_repo"] = g["git_origin"].apply(
                 lambda o: os.path.basename(o).split(".")[0]
