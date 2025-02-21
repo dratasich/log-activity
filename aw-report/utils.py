@@ -3,7 +3,9 @@
 
 # flatten json, e.g., `data` in aw events
 # https://towardsdatascience.com/flattening-json-objects-in-python-f5343c794b10
-def flatten_json(y, map={}):
+def flatten_json(y, map: dict | None = None):
+    if map is None:
+        map = {}
     out = {}
 
     def rename(name):

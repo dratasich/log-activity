@@ -7,21 +7,35 @@ import pandas as pd
 class Activities:
     def __init__(
         self,
-        meetings=pd.DataFrame(columns=["date", "project", "duration", "subject"]),
-        git=pd.DataFrame(
-            columns=[
-                "date",
-                "project",
-                "git_issues",
-                "git_origin",
-                "git_summary",
-                "time",
-            ]
-        ),
+        meetings: pd.DataFrame | None = None,
+        git: pd.DataFrame | None = None,
     ):
         # input activities
-        self._meetings = meetings
-        self._git = git
+        # meetings
+        meetings_columns = ["date", "project", "duration", "subject"]
+        if meetings is None:
+            self._meetings = pd.DataFrame(columns=meetings_columns)
+        else:
+            # warn if columns are missing
+            if not all(c in meetings.columns for c in meetings_columns):
+                raise ValueError("meetings columns missing")
+            self._meetings = meetings
+        # git
+        git_columns = [
+            "date",
+            "project",
+            "git_issues",
+            "git_origin",
+            "git_summary",
+            "time",
+        ]
+        if git is None:
+            self._git = pd.DataFrame(columns=git_columns)
+        else:
+            # warn if columns are missing
+            if not all(c in git.columns for c in git_columns):
+                raise ValueError("git columns missing")
+            self._git = git
         # aggregate and map to activities
         self._aggregate()
 

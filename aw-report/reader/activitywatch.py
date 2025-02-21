@@ -26,9 +26,13 @@ class ActivityWatchReader:
         self,
         query,
         time_ranges: list[tuple[datetime, datetime]],
-        rename={},
-        metadata={},
+        rename: dict | None = None,
+        metadata: dict | None = None,
     ):
+        if rename is None:
+            rename = {}
+        if metadata is None:
+            metadata = {}
         events = self._client.query(query, time_ranges)[0]
         df = pd.DataFrame([flatten_json(e, rename) for e in events])
         # add metadata info to each row

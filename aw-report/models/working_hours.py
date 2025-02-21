@@ -69,9 +69,9 @@ class WorkingHours:
         else:
             return end_min - active, end_min
 
-    def round_timedelta(
-        tm: timedelta, round_to_s=timedelta(minutes=15).total_seconds()
-    ):
+    def round_timedelta(tm: timedelta, round_to_s: int | None = None):
+        if round_to_s is None:
+            round_to_s = timedelta(minutes=15).total_seconds()
         tm_rounded = timedelta(
             seconds=int((tm.total_seconds() + round_to_s / 2) / (round_to_s))
             * (round_to_s)
