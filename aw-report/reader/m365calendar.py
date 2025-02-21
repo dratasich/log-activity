@@ -12,7 +12,7 @@ class M365CalendarReader:
         # load calendar
         try:
             calendar = pd.read_json(filename, orient="records")
-        except:
+        except ValueError:
             self._logger.warning("failed to read meetings")
             return None
         # convert datetimes (from GraphAPI)

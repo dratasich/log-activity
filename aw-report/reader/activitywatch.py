@@ -116,7 +116,7 @@ class ActivityWatchReader:
                 & (self.events.timestamp <= pd.to_datetime(date[1]))
             ]
         except KeyError:
-            logger.debug("no events within the range")
+            self._logger.debug("no events within the range")
 
 
 class ActivityWatchAFKReader(ActivityWatchReader):

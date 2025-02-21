@@ -51,7 +51,5 @@ exclude = [
 # https://docs.astral.sh/ruff/linter/#rule-selection
 #select = ["E", "F", "UP", "B", "SIM", "I"]
 select = ["E"]
-# ignore error on link, but format with ruff
 # https://docs.astral.sh/ruff/rules/
-# format before linting -> no need to ignore these
-#ignore = ["E203", "E501"]
+ignore = ["E203", "E501"]
