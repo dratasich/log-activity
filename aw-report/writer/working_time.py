@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta
 
-import numpy as np
 import pandas as pd
 from dateutil.tz import tzlocal
 
@@ -8,11 +7,12 @@ from models.working_hours import WorkingHours
 
 
 class WorkingTimeWriter:
-
     def __init__(self, df: pd.DataFrame):
         self.logs = df[["active", "lunch_incl", "start", "end"]].copy()
         self.logs.columns = [g[0] for g in self.logs.columns]
-        self.logs["verification"] = self.logs.apply(WorkingTimeWriter._verify_row, axis=1)
+        self.logs["verification"] = self.logs.apply(
+            WorkingTimeWriter._verify_row, axis=1
+        )
 
     def _verify_row(row):
         """Returns notification for user on requirements' violation
@@ -36,7 +36,9 @@ class WorkingTimeWriter:
                 tz=tzlocal()
             )
         if weekday <= 5 and (row["start"] > start_max or row["end"] < end_min):
-            notes.append(f"Kernzeit violation ({start_max.strftime('%H:%M')}-{end_min.strftime('%H:%M')})")
+            notes.append(
+                f"Kernzeit violation ({start_max.strftime('%H:%M')}-{end_min.strftime('%H:%M')})"
+            )
 
         # rest time
         start_min, end_max = (
@@ -44,9 +46,13 @@ class WorkingTimeWriter:
             datetime.fromisoformat(f"{isotoday}T19:00:00").astimezone(tz=tzlocal()),
         )
         if row["start"] < start_min:
-            notes.append(f"rest time violation (work time >= {start_min.strftime('%H:%M')})")
+            notes.append(
+                f"rest time violation (work time >= {start_min.strftime('%H:%M')})"
+            )
         if row["end"] > end_max:
-            notes.append(f"rest time violation (work time <= {end_max.strftime('%H:%M')})")
+            notes.append(
+                f"rest time violation (work time <= {end_max.strftime('%H:%M')})"
+            )
 
         # logs on weekends
         if (weekday == 6 or weekday == 7) and row["active"].seconds > 0:
@@ -60,8 +66,12 @@ class WorkingTimeWriter:
 
     def save(self):
         # format output for csv
-        self.logs["start"] = self.logs["start"].apply(lambda r: WorkingHours.str_time(r))
+        self.logs["start"] = self.logs["start"].apply(
+            lambda r: WorkingHours.str_time(r)
+        )
         self.logs["end"] = self.logs["end"].apply(lambda r: WorkingHours.str_time(r))
-        self.logs["active"] = self.logs["active"].apply(lambda r: WorkingHours.str_delta(r))
+        self.logs["active"] = self.logs["active"].apply(
+            lambda r: WorkingHours.str_delta(r)
+        )
         # write to file
         self.logs.to_csv("working_time.csv")

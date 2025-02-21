@@ -1,5 +1,6 @@
 """Helpers for pandas dataframes."""
 
+
 # flatten json, e.g., `data` in aw events
 # https://towardsdatascience.com/flattening-json-objects-in-python-f5343c794b10
 def flatten_json(y, map={}):

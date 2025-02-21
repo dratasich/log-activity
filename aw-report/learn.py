@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
 
-import argparse
-import logging
 import socket
 from datetime import datetime
-from typing import List, Optional
 
-import pandas as pd
 from aw_client import ActivityWatchClient
-from aw_core.models import Event
 from sklearn.model_selection import train_test_split
 
 from models import *
@@ -18,7 +13,7 @@ DATE_FROM = datetime.today().replace(day=1, hour=4, minute=0, second=0, microsec
 DATE_TO = datetime.now()
 
 # aw settings
-BUCKET_WEB = f"aw-watcher-web-firefox"
+BUCKET_WEB = "aw-watcher-web-firefox"
 BUCKET_GIT = f"aw-git-hooks_{socket.gethostname()}"
 
 client = ActivityWatchClient("report-client")
@@ -32,11 +27,10 @@ RETURN = sort_by_timestamp(events);
 """
 git = client.query(query, [(DATE_FROM, DATE_TO)])
 hooks = hooks_to_dataframe([GitHook(**e["data"]) for e in git[0]])
-issues = hooks["issue"] \
-    .drop_duplicates() \
-    .dropna()
-projects = issues.loc[issues.str.contains(r"[A-Z]+-[0-9]+")] \
-    .apply(lambda r: r.split('-')[0])
+issues = hooks["issue"].drop_duplicates().dropna()
+projects = issues.loc[issues.str.contains(r"[A-Z]+-[0-9]+")].apply(
+    lambda r: r.split("-")[0]
+)
 
 
 # get all window titles, project titles, etc.

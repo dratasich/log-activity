@@ -17,3 +17,41 @@ dependencies = [
 dev = [
     "ruff<1.0.0,>=0.6.1",
 ]
+
+
+# https://docs.astral.sh/ruff/configuration/
+[tool.ruff]
+# Set the maximum line length to 79 (pep 8).
+#line-length = 79
+# Same as Black.
+line-length = 88
+indent-width = 4
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    "poc",
+    ".git",
+    ".git-rewrite",
+    ".ipynb",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".venv",
+    "venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "site-packages",
+]
+
+[tool.ruff.lint]
+# rule selection
+# https://docs.astral.sh/ruff/linter/#rule-selection
+#select = ["E", "F", "UP", "B", "SIM", "I"]
+select = ["E"]
+# ignore error on link, but format with ruff
+# https://docs.astral.sh/ruff/rules/
+# format before linting -> no need to ignore these
+#ignore = ["E203", "E501"]

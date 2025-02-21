@@ -8,23 +8,27 @@ Query ActivityWatch events.
 import logging
 import re
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 from aw_client import ActivityWatchClient
-from dateutil.tz import tzlocal
 from utils import *
 
 
-class ActivityWatchReader():
-
+class ActivityWatchReader:
     def __init__(self, client: ActivityWatchClient):
         self._logger = logging.getLogger(__name__)
         self._client = client
         self.events = None
 
-    def get(self, query, time_ranges: List[Tuple[datetime, datetime]], rename={}, metadata={}):
+    def get(
+        self,
+        query,
+        time_ranges: List[Tuple[datetime, datetime]],
+        rename={},
+        metadata={},
+    ):
         events = self._client.query(query, time_ranges)[0]
         df = pd.DataFrame([flatten_json(e, rename) for e in events])
         # add metadata info to each row
@@ -40,28 +44,30 @@ class ActivityWatchReader():
         if len(self.events) == 0:
             return  # nothing to map
         # change python timestamp to pandas timestamp
-        self.events["timestamp"] = pd.to_datetime(self.events.timestamp, format='ISO8601')
+        self.events["timestamp"] = pd.to_datetime(
+            self.events.timestamp, format="ISO8601"
+        )
         # add date column from exact timestamp (= starting point of activity)
         self.events["date"] = self.events.timestamp.dt.date
         # add time = duration as timedelta
         self.events["time"] = self.events.duration.apply(lambda d: timedelta(seconds=d))
 
     def categorize(
-            self,
-            regexes: Dict[str, re.Pattern],
-            columns,
-            single=False,
+        self,
+        regexes: Dict[str, re.Pattern],
+        columns,
+        single=False,
     ):
         if len(self.events) == 0:
             return
         self.events = self._categorize(self.events, regexes, columns, single)
 
     def _categorize(
-            self,
-            df,
-            regexes: Dict[str, re.Pattern],
-            columns,
-            single=False,
+        self,
+        df,
+        regexes: Dict[str, re.Pattern],
+        columns,
+        single=False,
     ):
         """Categorizes each event of df given a regex per category."""
         if len(df) == 0:
@@ -89,7 +95,9 @@ class ActivityWatchReader():
         else:
             df.loc[:, "category"] = df_category
             df.loc[:, "has_category"] = df.apply(
-                lambda row: not pd.isna(row.category) if single else len(row.category) > 0,
+                lambda row: not pd.isna(row.category)
+                if single
+                else len(row.category) > 0,
                 axis=1,
             )
         self._logger.debug(f"total: {len(df)}")
@@ -103,39 +111,48 @@ class ActivityWatchReader():
         if self.events is None or len(self.events) == 0:
             return self.events
         try:
-            return self.events[(self.events.timestamp >= pd.to_datetime(date[0]))
-                               & (self.events.timestamp <= pd.to_datetime(date[1]))]
-        except KeyError as e:
-            logger.debug(f"no events within the range")
+            return self.events[
+                (self.events.timestamp >= pd.to_datetime(date[0]))
+                & (self.events.timestamp <= pd.to_datetime(date[1]))
+            ]
+        except KeyError:
+            logger.debug("no events within the range")
 
 
 class ActivityWatchAFKReader(ActivityWatchReader):
-
     def get(self, time_ranges: List[Tuple[datetime, datetime]]):
-        query = f"""
+        query = """
         events = query_bucket(find_bucket("aw-watcher-afk_"));
         RETURN = sort_by_timestamp(events);
         """
-        super().get(query, time_ranges, rename={"data": "afk"}, metadata={"source": "aw-watcher-afk"})
+        super().get(
+            query,
+            time_ranges,
+            rename={"data": "afk"},
+            metadata={"source": "aw-watcher-afk"},
+        )
         self.events["afk"] = self.events["afk_status"].apply(lambda s: s == "afk")
 
 
 class ActivityWatchEmacsReader(ActivityWatchReader):
-
     def get(self, time_ranges: List[Tuple[datetime, datetime]]):
-        query = f"""
+        query = """
         afk_events = query_bucket(find_bucket("aw-watcher-afk_"));
         events = query_bucket(find_bucket("aw-watcher-emacs_"));
         events = filter_period_intersect(events, filter_keyvals(afk_events, "status", ["not-afk"]));
         RETURN = sort_by_timestamp(events);
         """
-        super().get(query, time_ranges, rename={"data": "editor"}, metadata={"source": "aw-watcher-emacs"})
+        super().get(
+            query,
+            time_ranges,
+            rename={"data": "editor"},
+            metadata={"source": "aw-watcher-emacs"},
+        )
 
 
 class ActivityWatchIDEReader(ActivityWatchReader):
-
     def get(self, time_ranges: List[Tuple[datetime, datetime]]):
-        query = f"""
+        query = """
         afk_events = query_bucket(find_bucket("aw-watcher-afk_"));
         events = query_bucket(find_bucket("aw-watcher-window_"));
         events = filter_period_intersect(events, filter_keyvals(afk_events, "status", ["not-afk"]));
@@ -143,40 +160,57 @@ class ActivityWatchIDEReader(ActivityWatchReader):
         events = merge_events_by_keys(events, ["app", "title"]);
         RETURN = sort_by_timestamp(events);
         """
-        super().get(query, time_ranges, rename={"data": "editor"}, metadata={"source": "aw-watcher-window"})
+        super().get(
+            query,
+            time_ranges,
+            rename={"data": "editor"},
+            metadata={"source": "aw-watcher-window"},
+        )
 
 
 class ActivityWatchWebReader(ActivityWatchReader):
-
     def get(self, time_ranges: List[Tuple[datetime, datetime]]):
-        query = f"""
+        query = """
         window_events = query_bucket(find_bucket("aw-watcher-window_"));
         web_events = query_bucket(find_bucket("aw-watcher-web"));
         web_events = filter_period_intersect(web_events, filter_keyvals(window_events, "app", ["Firefox", "Chrome"]));
         merged_events = merge_events_by_keys(web_events, ["url", "title"]);
         RETURN = sort_by_duration(merged_events);
         """
-        super().get(query, time_ranges, rename={"data": "web"}, metadata={"source": "aw-watcher-web"})
+        super().get(
+            query,
+            time_ranges,
+            rename={"data": "web"},
+            metadata={"source": "aw-watcher-web"},
+        )
 
 
 class ActivityWatchGitReader(ActivityWatchReader):
-
     def get(self, time_ranges: List[Tuple[datetime, datetime]]):
-        query = f"""
+        query = """
         events = query_bucket(find_bucket("aw-git-hooks_"));
         RETURN = sort_by_timestamp(events);
         """
-        super().get(query, time_ranges, rename={"data": "git"}, metadata={"source": "aw-git-hooks"})
+        super().get(
+            query,
+            time_ranges,
+            rename={"data": "git"},
+            metadata={"source": "aw-git-hooks"},
+        )
 
     def categorize_issues(
-            self,
-            regex_for_issues: Dict[str, re.Pattern],
-            regex_for_repos: Dict[str, re.Pattern],
+        self,
+        regex_for_issues: Dict[str, re.Pattern],
+        regex_for_repos: Dict[str, re.Pattern],
     ):
         if len(self.events) == 0:
             return
 
-        commits = self.events[self.events.git_hook == "post-commit"].explode("git_issues").reset_index(drop=True)
+        commits = (
+            self.events[self.events.git_hook == "post-commit"]
+            .explode("git_issues")
+            .reset_index(drop=True)
+        )
 
         # abort if no post-commits
         if len(commits) == 0:

@@ -1,21 +1,21 @@
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Tuple
 
 from dateutil.tz import tzlocal
 
 
-class WorkingHours():
-
+class WorkingHours:
     def __init__(
-            self,
-            actual_start: datetime,
-            actual_end: datetime,
-            active: timedelta,
+        self,
+        actual_start: datetime,
+        actual_end: datetime,
+        active: timedelta,
     ):
         self._logger = logging.getLogger(__name__)
         self.hours, self.lunch_incl = WorkingHours.align_hours(active)
-        self.start, self.end = WorkingHours.align_range(actual_start, actual_end, self.hours)
+        self.start, self.end = WorkingHours.align_range(
+            actual_start, actual_end, self.hours
+        )
 
     def align_hours(active: timedelta):
         # consider lunch break (a must when time >= 6h)
@@ -26,10 +26,14 @@ class WorkingHours():
             lunch_incl = True
             working_hours_incl_lunch += timedelta(minutes=30)
         # round to 15min
-        working_hours_incl_lunch = WorkingHours.round_timedelta(working_hours_incl_lunch)
+        working_hours_incl_lunch = WorkingHours.round_timedelta(
+            working_hours_incl_lunch
+        )
         return working_hours_incl_lunch, lunch_incl
 
-    def align_range(actual_start: datetime, actual_end: datetime, active: timedelta, round=True):
+    def align_range(
+        actual_start: datetime, actual_end: datetime, active: timedelta, round=True
+    ):
         """Converts start and end of today to something that is allowed and reflects active time."""
         # round
         if round:
@@ -65,14 +69,17 @@ class WorkingHours():
         else:
             return end_min - active, end_min
 
-    def round_timedelta(tm: timedelta, round_to_s=timedelta(minutes=15).total_seconds()):
+    def round_timedelta(
+        tm: timedelta, round_to_s=timedelta(minutes=15).total_seconds()
+    ):
         tm_rounded = timedelta(
-            seconds=int((tm.total_seconds() + round_to_s / 2) / (round_to_s)) * (round_to_s)
+            seconds=int((tm.total_seconds() + round_to_s / 2) / (round_to_s))
+            * (round_to_s)
         )
         return tm_rounded
 
     def round_datetime(tm: datetime, round_to_min=15):
-        tm_rounded = tm + timedelta(minutes=float(round_to_min)/2)
+        tm_rounded = tm + timedelta(minutes=float(round_to_min) / 2)
         tm_rounded -= timedelta(
             minutes=tm_rounded.minute % round_to_min,
             seconds=tm_rounded.second,
